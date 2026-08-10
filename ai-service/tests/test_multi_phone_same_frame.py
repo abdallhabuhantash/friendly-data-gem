@@ -125,13 +125,30 @@ def test_cooldown_is_per_phone_and_never_cross_suppresses():
     second = instant(run(engine, FrameDetections((PERSON_A, PERSON_B), (PHONE_A,)), now=1.0))
     assert second == []
 
-    # A brand new phone C on person B must not be suppressed by A's cooldown.
-    phone_c = phone(0.74, 0.62, tid="57")
+    # A brand new phone C on a different person must not be suppressed by A's
+    # cooldown: instant dedup scope is the subject, never a shared frame scope.
+    person_c = person("37", 0.42)
+    phone_c = phone(0.48, 0.50, tid="57")
     third = instant(
-        run(engine, FrameDetections((PERSON_A, PERSON_B), (PHONE_A, phone_c)), now=2.0)
+        run(engine, FrameDetections((PERSON_A, person_c), (PHONE_A, phone_c)), now=2.0)
     )
     assert len(third) == 1
     assert trigger_evidence(third[0]).tracking_id == "57"
+    assert third[0].event.person_tracking_id == "37"
+
+
+def test_new_phone_on_already_alerted_person_respects_that_persons_cooldown():
+    # Scope check, not a multi-phone defect: once person B has produced an
+    # instant warning, a second phone attributed to the SAME person stays in
+    # that person's cooldown window, while person A keeps its own scope.
+    engine = PhoneRuleEngine()
+    assert len(instant(run(engine, FrameDetections((PERSON_B,), (PHONE_B,)), now=0.0))) == 1
+    phone_c = phone(0.74, 0.62, tid="57")
+    assert instant(run(engine, FrameDetections((PERSON_B,), (phone_c,)), now=1.0)) == []
+    later = instant(run(engine, FrameDetections((PERSON_A,), (PHONE_A,)), now=1.5))
+    assert len(later) == 1
+    assert later[0].event.person_tracking_id == "11"
+
 
 
 # --- 3: one uncertain + one clear phone in the same frame ----------------
