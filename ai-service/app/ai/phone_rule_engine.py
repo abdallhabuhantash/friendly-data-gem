@@ -99,10 +99,25 @@ class EventDraft:
     event: AiEvent
     rule: RuleConfig
     save_snapshot: bool
+    #: "instant" = single-frame visible-phone evidence,
+    #: "temporal" = duration + frame-count confirmed evidence.
+    origin: str = "temporal"
 
 
 class PhoneRuleEngine:
-    """Stateful per-camera engine for one rule instance."""
+    """Stateful per-camera engine for one rule instance.
+
+    Two independent evidence levels share one detection pass:
+
+    * PATH A (instant): a single analysed frame with a phone confidence at or
+      above the stricter instant threshold preserves the observation as a
+      `mobile_phone_detected` warning. It never claims cheating.
+    * PATH B (temporal): unchanged duration + matching-frame + association
+      reasoning, the only path that may produce the stronger event types.
+
+    The two paths keep separate state, so an instant warning never resets,
+    consumes or suppresses a later temporal escalation.
+    """
 
     engine_key = "mobile_phone_detection"
 
@@ -115,6 +130,7 @@ class PhoneRuleEngine:
         self.association_margin = association_margin
         self._confirmers: dict[str, TemporalConfirmer] = {}
         self._memory: dict[str, AssociationMemory] = {}
+        self._instant: dict[str, InstantGate] = {}
         self._gap_tolerance = gap_tolerance_seconds
 
     def _confirmer(self, camera_id: str) -> TemporalConfirmer:
@@ -127,9 +143,15 @@ class PhoneRuleEngine:
             self._memory[camera_id] = AssociationMemory()
         return self._memory[camera_id]
 
+    def _instant_gate(self, camera_id: str) -> InstantGate:
+        if camera_id not in self._instant:
+            self._instant[camera_id] = InstantGate()
+        return self._instant[camera_id]
+
     def reset(self, camera_id: str) -> None:
         self._confirmers.pop(camera_id, None)
         self._memory.pop(camera_id, None)
+        self._instant.pop(camera_id, None)
 
     def process_frame(
         self,
