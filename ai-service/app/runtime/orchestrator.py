@@ -163,10 +163,15 @@ class Orchestrator:
 
     # --- inference --------------------------------------------------------
     def _inference_loop(self, camera_id: str) -> None:
-        min_interval = 1.0 / max(0.5, float(self.settings.inference_max_fps))
+        # `inference_max_fps <= 0` means "run as fast as the model actually
+        # allows" — the loop is then paced only by real inference time, never by
+        # an artificial ceiling. No frame queue exists either way.
+        max_fps = float(self.settings.inference_max_fps)
+        min_interval = (1.0 / max_fps) if max_fps > 0 else 0.0
         processed = 0
         window_start = time.monotonic()
         window_frames = 0
+        last_sequence = -1
 
         while not self._stop.is_set():
             worker = self.cameras.worker(camera_id)
@@ -175,16 +180,22 @@ class Orchestrator:
                 return
 
             cycle_start = time.monotonic()
-            frame = worker.latest_frame()
+            frame, sequence = worker.latest_frame_with_sequence()
             if frame is None:
                 self._stop.wait(0.2)
                 continue
+            if sequence == last_sequence:
+                # The same captured frame must never be analysed twice: a frozen
+                # stream would otherwise fake multiple matching frames.
+                self._stop.wait(0.005)
+                continue
+            last_sequence = sequence
 
             processed += 1
             if self.settings.process_every_n_frames > 1 and (
                 processed % int(self.settings.process_every_n_frames)
             ):
-                self._stop.wait(0.01)
+                self._stop.wait(0.005)
                 continue
 
             try:
