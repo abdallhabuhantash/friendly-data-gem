@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Search, Video, Waves } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatusDot } from "@/components/common/StatusDot";
+import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
 import { cn } from "@/lib/utils";
 import type { AiRule, Camera } from "@/types";
 
@@ -14,6 +15,9 @@ function CameraListItem({
   selected: boolean;
   onSelect: () => void;
 }) {
+  // Status and REC follow heartbeat freshness, never the stored flag alone.
+  const status = effectiveCameraStatus(camera);
+  const recording = !isCameraStale(camera) && camera.recording;
   return (
     <button
       type="button"
@@ -28,13 +32,13 @@ function CameraListItem({
       <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
         <StatusDot
           tone={
-            camera.status === "online"
+            status === "online"
               ? "online"
-              : camera.status === "degraded"
+              : status === "degraded"
                 ? "degraded"
                 : "offline"
           }
-          pulse={camera.status === "online"}
+          pulse={status === "online"}
         />
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -48,8 +52,8 @@ function CameraListItem({
             <span className={camera.aiEnabled ? "text-primary" : ""}>
               AI {camera.aiEnabled ? "active" : "off"}
             </span>
-            <span className={camera.recording ? "text-destructive" : ""}>
-              {camera.recording ? "● REC" : "not recording"}
+            <span className={recording ? "text-destructive" : ""}>
+              {recording ? "● REC" : "not recording"}
             </span>
           </div>
         </div>
