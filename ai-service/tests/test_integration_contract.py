@@ -67,7 +67,8 @@ def test_rule_assignment_is_by_camera_uuid_not_position():
     assert not rule.applies_to("cam-b")
 
 
-def test_rule_without_camera_assignment_does_not_leak_to_every_camera():
+def test_unscoped_rule_applies_to_every_camera_generically():
+    """An empty scope is fleet-wide by design: it must not be camera-count aware."""
     rule = RuleConfig(
         id="r2",
         name="Phone",
@@ -76,4 +77,4 @@ def test_rule_without_camera_assignment_does_not_leak_to_every_camera():
         available=True,
         camera_ids=(),
     )
-    assert not rule.applies_to("cam-a")
+    assert all(rule.applies_to(cid) for cid in ("cam-a", "cam-b", "cam-c"))
