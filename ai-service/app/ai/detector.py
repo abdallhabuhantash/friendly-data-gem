@@ -5,15 +5,19 @@ to another YOLO checkpoint requires no code change.
 
 Tracker isolation
 -----------------
-Ultralytics ``model.track(persist=True)`` keeps an *internal* tracker state
-inside the model object. If one shared model is called with ``persist=True``
-for camera A then camera B, ByteTrack's track IDs can bleed across cameras.
+Ultralytics ``model.track(persist=True)`` keeps the tracker state on the
+*shared predictor* (``model.predictor.trackers``). Calling it with
+``persist=True`` for camera A and then camera B would let ByteTrack track IDs
+bleed across cameras, and ``persist=False`` would throw the history away every
+frame (no tracking at all).
 
 To guarantee that Camera A's tracking history can never influence Camera B,
-each camera gets its own lightweight tracker object. Before inference we swap
-the per-camera tracker into the shared model, run ``track(persist=False)``, and
-restore the previous tracker. This keeps one shared YOLO detector (no model
-copy per camera) while keeping tracker state strictly isolated.
+:class:`TrackerStateStore` swaps each camera's own tracker state onto the
+shared predictor immediately before ``track(persist=True)`` and captures it
+again afterwards. This keeps exactly one shared YOLO model (no model copy per
+camera) while tracker state stays strictly per camera, and uses only the
+Ultralytics attributes the public ``track()`` API itself maintains.
+
 """
 
 from __future__ import annotations
