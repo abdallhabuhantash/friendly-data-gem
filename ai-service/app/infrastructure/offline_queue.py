@@ -194,6 +194,90 @@ class OfflineQueue:
             ).fetchone()
         return int(row["total"])
 
+    # --- pending evidence (stored event, snapshot not uploaded yet) --------
+    def enqueue_evidence(self, event_id: str, object_path: str, local_path: str) -> None:
+        """Remembers that a persisted event still owes its snapshot evidence."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO pending_evidence"
+                " (event_id, object_path, local_path, created_at) VALUES (?, ?, ?, ?)",
+                (event_id, object_path, local_path, time.time()),
+            )
+            self._conn.commit()
+
+    def due_evidence(self, limit: int = 5, now: Optional[float] = None) -> list[PendingEvidence]:
+        moment = time.time() if now is None else now
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM pending_evidence WHERE next_attempt <= ?"
+                " ORDER BY created_at LIMIT ?",
+                (moment, limit),
+            ).fetchall()
+        return [
+            PendingEvidence(
+                event_id=row["event_id"],
+                object_path=row["object_path"],
+                local_path=row["local_path"],
+                attempts=row["attempts"],
+            )
+            for row in rows
+        ]
+
+    def mark_evidence_sent(self, event_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM pending_evidence WHERE event_id = ?", (event_id,))
+            self._conn.commit()
+
+    def mark_evidence_failed(
+        self, event_id: str, error: str, backoff_seconds: float = 30.0
+    ) -> None:
+        """Bounded backoff: the row stays until the upload finally succeeds."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE pending_evidence SET attempts = attempts + 1, last_error = ?,"
+                " next_attempt = ? WHERE event_id = ?",
+                (error[:500], time.time() + backoff_seconds, event_id),
+            )
+            self._conn.commit()
+
+    def evidence_depth(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) AS total FROM pending_evidence").fetchone()
+        return int(row["total"])
+
+    # --- local file ownership ---------------------------------------------
+    def references_file(self, local_path: str) -> bool:
+        """True while any pending job still needs this local snapshot file.
+
+        Deleting a referenced file would either orphan the stored event's
+        evidence or downgrade a queued Telegram photo to text, so cleanup must
+        consult this first.
+        """
+        target = str(local_path)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM pending_evidence WHERE local_path = ? LIMIT 1", (target,)
+            ).fetchone()
+            if row is not None:
+                return True
+            row = self._conn.execute(
+                "SELECT 1 FROM pending_events WHERE snapshot_path = ? LIMIT 1", (target,)
+            ).fetchone()
+            if row is not None:
+                return True
+            rows = self._conn.execute(
+                "SELECT payload FROM pending_notifications WHERE delivered = 0"
+            ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"])
+            except (TypeError, ValueError):  # pragma: no cover - defensive
+                continue
+            if str(payload.get("snapshot_file") or "") == target:
+                return True
+        return False
+
     def close(self) -> None:
+
         with self._lock:
             self._conn.close()
