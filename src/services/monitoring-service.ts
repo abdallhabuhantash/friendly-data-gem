@@ -149,6 +149,8 @@ const toRule = (row: RuleRow, cameraIds: string[]): AiRule => ({
   associationConfidenceThreshold: Number(row.association_confidence_threshold ?? 0.65),
   minMatchingFrames: Number(row.min_matching_frames ?? 5),
   requirePersonAssociation: Boolean(row.require_person_association),
+  instantDetectionEnabled: Boolean(row.instant_detection_enabled ?? true),
+  instantConfidenceThreshold: Number(row.instant_confidence_threshold ?? 0.85),
 });
 
 /** Which archive state a camera listing should include. */
