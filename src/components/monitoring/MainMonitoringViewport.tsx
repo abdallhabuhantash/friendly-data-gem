@@ -3,7 +3,12 @@ import { useRef } from "react";
 import { LiveStreamPlayer } from "@/components/common/LiveStreamPlayer";
 import { Button } from "@/components/ui/button";
 import { displaySeverity } from "@/lib/event-presentation";
-import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
+import {
+  effectiveCameraStatus,
+  effectiveRecordingState,
+  isCameraStale,
+  recordingStateLabel,
+} from "@/lib/health";
 import { DetectionOverlayLayer } from "./DetectionOverlayLayer";
 import { LiveAlertOverlay } from "./LiveAlertOverlay";
 import { cn } from "@/lib/utils";
