@@ -26,7 +26,13 @@ from ..domain.models import (
     SourceMode,
 )
 from .association import DEFAULT_ASSOCIATION_MARGIN, associate
-from .temporal_state import AssociationMemory, TemporalConfirmer, alert_key, subject_for
+from .temporal_state import (
+    AssociationMemory,
+    InstantGate,
+    TemporalConfirmer,
+    alert_key,
+    subject_for,
+)
 
 TYPE_SUSPICIOUS = "suspicious_cheating_activity"
 TYPE_POSSIBLE = "possible_cheating_activity"
