@@ -46,6 +46,7 @@ export type Database = {
       }
       ai_rules: {
         Row: {
+          association_confidence_threshold: number
           available: boolean
           confidence_threshold: number
           cooldown_seconds: number
@@ -54,12 +55,16 @@ export type Database = {
           enabled: boolean
           id: string
           min_duration_seconds: number
+          min_matching_frames: number
           name: string
+          person_confidence_threshold: number
+          require_person_association: boolean
           save_snapshot: boolean
           severity: string
           sound_notification: boolean
         }
         Insert: {
+          association_confidence_threshold?: number
           available?: boolean
           confidence_threshold?: number
           cooldown_seconds?: number
@@ -68,12 +73,16 @@ export type Database = {
           enabled?: boolean
           id?: string
           min_duration_seconds?: number
+          min_matching_frames?: number
           name: string
+          person_confidence_threshold?: number
+          require_person_association?: boolean
           save_snapshot?: boolean
           severity?: string
           sound_notification?: boolean
         }
         Update: {
+          association_confidence_threshold?: number
           available?: boolean
           confidence_threshold?: number
           cooldown_seconds?: number
@@ -82,7 +91,10 @@ export type Database = {
           enabled?: boolean
           id?: string
           min_duration_seconds?: number
+          min_matching_frames?: number
           name?: string
+          person_confidence_threshold?: number
+          require_person_association?: boolean
           save_snapshot?: boolean
           severity?: string
           sound_notification?: boolean
@@ -171,54 +183,81 @@ export type Database = {
       }
       events: {
         Row: {
+          association_confidence: number | null
+          association_status: string
           camera_id: string | null
           camera_name: string
           confidence: number
           created_at: string
           detected_at: string
+          detection_duration_seconds: number | null
+          detection_frame_count: number | null
           duration_seconds: number
+          evidence: Json
           id: string
           note: string | null
+          person_tracking_id: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           rule_id: string | null
           severity: string
           snapshot_path: string | null
+          source_mode: string
           status: string
+          trigger_confidence: number | null
+          trigger_object_class: string | null
           type: string
         }
         Insert: {
+          association_confidence?: number | null
+          association_status?: string
           camera_id?: string | null
           camera_name?: string
           confidence?: number
           created_at?: string
           detected_at?: string
+          detection_duration_seconds?: number | null
+          detection_frame_count?: number | null
           duration_seconds?: number
+          evidence?: Json
           id?: string
           note?: string | null
+          person_tracking_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rule_id?: string | null
           severity?: string
           snapshot_path?: string | null
+          source_mode?: string
           status?: string
+          trigger_confidence?: number | null
+          trigger_object_class?: string | null
           type: string
         }
         Update: {
+          association_confidence?: number | null
+          association_status?: string
           camera_id?: string | null
           camera_name?: string
           confidence?: number
           created_at?: string
           detected_at?: string
+          detection_duration_seconds?: number | null
+          detection_frame_count?: number | null
           duration_seconds?: number
+          evidence?: Json
           id?: string
           note?: string | null
+          person_tracking_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rule_id?: string | null
           severity?: string
           snapshot_path?: string | null
+          source_mode?: string
           status?: string
+          trigger_confidence?: number | null
+          trigger_object_class?: string | null
           type?: string
         }
         Relationships: [
