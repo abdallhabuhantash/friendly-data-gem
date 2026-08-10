@@ -53,6 +53,7 @@ export type Database = {
           created_at: string
           description: string
           enabled: boolean
+          engine_key: string | null
           id: string
           min_duration_seconds: number
           min_matching_frames: number
@@ -71,6 +72,7 @@ export type Database = {
           created_at?: string
           description?: string
           enabled?: boolean
+          engine_key?: string | null
           id?: string
           min_duration_seconds?: number
           min_matching_frames?: number
@@ -89,6 +91,7 @@ export type Database = {
           created_at?: string
           description?: string
           enabled?: boolean
+          engine_key?: string | null
           id?: string
           min_duration_seconds?: number
           min_matching_frames?: number
