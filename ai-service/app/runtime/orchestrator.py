@@ -173,7 +173,23 @@ class Orchestrator:
             self._threads[camera_id] = thread
             thread.start()
 
+    def _reset_camera_runtime(self, camera_id: str) -> None:
+        """Idempotently drops all runtime state of ONE camera.
+
+        Shared by camera removal and same-id source replacement: engine state,
+        distinct-frame gate, tracker state, published stream frame and the
+        inference FPS measurement all belong to a single stream incarnation.
+        Never touches any other camera and never stops a capture worker.
+        """
+        self.registry.reset(camera_id)
+        self.stream_hub.drop(camera_id)
+        self._inference_fps.pop(camera_id, None)
+        self._frame_gate.reset(camera_id)
+        if self.detector:
+            self.detector.reset_camera(camera_id)
+
     def _rules_for(self, camera: CameraConfig) -> list[RuleConfig]:
+
         """Every enabled, available rule assigned to this camera, any engine."""
         return [
             rule
