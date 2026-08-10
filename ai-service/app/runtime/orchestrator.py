@@ -86,6 +86,10 @@ class Orchestrator:
             association_margin=settings.association_margin,
             gap_tolerance_seconds=settings.detection_gap_tolerance_seconds,
         )
+        # Explicit engine map: only the implemented phone engine is registered.
+        self.registry = EngineRegistry()
+        self.registry.register(ENGINE_MOBILE_PHONE, PhoneEngineAdapter(self.engine))
+
 
         self.detector: Optional[YoloDetector] = None
         self.system = SystemConfig()
