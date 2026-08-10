@@ -1,8 +1,13 @@
+# Real secrets and local state stay out of version control.
 .env
-secrets/*.json
 snapshots/
 state/
 models/*.pt
 __pycache__/
 *.pyc
 .venv/
+
+# Real camera credentials must never be committed...
+secrets/*.json
+# ...but the safe templates are tracked.
+!secrets/*.example.json
