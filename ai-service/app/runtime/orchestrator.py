@@ -296,8 +296,10 @@ class Orchestrator:
                 last_cameras = now
 
             self.publisher.retry_pending()
+            self.publisher.retry_pending_evidence()
             self.notifications.drain()
             self._stop.wait(1.0)
+
 
     def _camera_heartbeats(self) -> None:
         """Reports only observed connectivity: never optimistic, never guessed."""
