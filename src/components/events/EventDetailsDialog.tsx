@@ -28,7 +28,7 @@ import {
   formatSeconds,
 } from "@/lib/event-presentation";
 import { formatTimestamp } from "@/lib/format";
-import { overlaysFromEvidence } from "@/services/monitoring-demo-data";
+import { overlaysFromEvidence } from "@/services/detection-overlays";
 import type { DetectionEvent, EventStatus } from "@/types";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
