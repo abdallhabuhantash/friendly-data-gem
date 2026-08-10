@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Search, Video, Waves } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatusDot } from "@/components/common/StatusDot";
@@ -67,11 +68,13 @@ export function CameraSidebar({
   selectedId,
   onSelect,
   rule,
+  loading = false,
 }: {
   cameras: Camera[];
   selectedId: string;
   onSelect: (camera: Camera) => void;
   rule?: AiRule;
+  loading?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const visible = useMemo(
@@ -99,6 +102,25 @@ export function CameraSidebar({
         </label>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 p-4 text-center">
+            <p className="font-mono text-[10px] uppercase text-muted-foreground">
+              {loading
+                ? "Loading cameras…"
+                : cameras.length === 0
+                  ? "No cameras configured"
+                  : "No cameras match filter"}
+            </p>
+            {!loading && cameras.length === 0 && (
+              <Link
+                to="/cameras"
+                className="border border-primary/40 px-2 py-1 font-mono text-[9px] text-primary hover:bg-primary/10"
+              >
+                ADD CAMERA
+              </Link>
+            )}
+          </div>
+        ) : null}
         {visible.map((camera) => (
           <CameraListItem
             key={camera.id}
@@ -114,19 +136,17 @@ export function CameraSidebar({
           <h3 className="label-tech text-foreground">Analysis controls</h3>
         </div>
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[10px]">
-          <dt className="text-muted-foreground">Analysis mode</dt>
-          <dd className="text-primary">CONTINUOUS</dd>
           <dt className="text-muted-foreground">Active rule</dt>
-          <dd className="max-w-28 truncate text-foreground">{rule?.name ?? "Mobile Phone"}</dd>
+          <dd className="max-w-28 truncate text-foreground">{rule?.name ?? "None enabled"}</dd>
           <dt className="text-muted-foreground">Confidence</dt>
           <dd className="text-foreground">
-            {Math.round((rule?.confidenceThreshold ?? 0.7) * 100)}%
+            {rule ? `${Math.round(rule.confidenceThreshold * 100)}%` : "—"}
           </dd>
-          <dt className="text-muted-foreground">Inference rate</dt>
-          <dd className="text-foreground">LIVE</dd>
+          <dt className="text-muted-foreground">AI cameras</dt>
+          <dd className="text-foreground">{cameras.filter((camera) => camera.aiEnabled).length}</dd>
           <dt className="text-muted-foreground">Source</dt>
           <dd className="flex items-center gap-1 text-foreground">
-            <Video className="size-3" /> IP / NVR
+            <Video className="size-3" /> {cameras.length > 0 ? "IP / NVR" : "—"}
           </dd>
         </dl>
       </div>
