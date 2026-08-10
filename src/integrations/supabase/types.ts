@@ -135,6 +135,7 @@ export type Database = {
       }
       cameras: {
         Row: {
+          active: boolean
           ai_enabled: boolean
           channel: number
           created_at: string
@@ -147,9 +148,15 @@ export type Database = {
           name: string
           recording: boolean
           resolution: string
+          rtsp_port: number
+          source_type: string
           status: string
+          stream_path: string
+          stream_profile: string
+          updated_at: string
         }
         Insert: {
+          active?: boolean
           ai_enabled?: boolean
           channel?: number
           created_at?: string
@@ -162,9 +169,15 @@ export type Database = {
           name: string
           recording?: boolean
           resolution?: string
+          rtsp_port?: number
+          source_type?: string
           status?: string
+          stream_path?: string
+          stream_profile?: string
+          updated_at?: string
         }
         Update: {
+          active?: boolean
           ai_enabled?: boolean
           channel?: number
           created_at?: string
@@ -177,7 +190,12 @@ export type Database = {
           name?: string
           recording?: boolean
           resolution?: string
+          rtsp_port?: number
+          source_type?: string
           status?: string
+          stream_path?: string
+          stream_profile?: string
+          updated_at?: string
         }
         Relationships: []
       }
