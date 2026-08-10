@@ -146,18 +146,19 @@ class Orchestrator:
             logger.warning("Configuration refresh failed: %s", type(exc).__name__)
             return
 
-        self.cameras.sync(cameras)
+        reconfigured = self.cameras.sync(cameras) or set()
         active = set(self.cameras.active)
+
+        # A same-id source replacement must not inherit runtime state from the
+        # previous stream incarnation, so it uses exactly the removal cleanup.
+        for camera_id in reconfigured:
+            self._reset_camera_runtime(camera_id)
 
         for camera_id in list(self._threads):
             if camera_id not in active:
                 self._threads.pop(camera_id, None)
-                self.registry.reset(camera_id)
-                self.stream_hub.drop(camera_id)
-                self._inference_fps.pop(camera_id, None)
-                self._frame_gate.reset(camera_id)
-                if self.detector:
-                    self.detector.reset_camera(camera_id)
+                self._reset_camera_runtime(camera_id)
+
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
