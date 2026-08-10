@@ -130,6 +130,10 @@ class SupabaseRepository:
                     require_person_association=bool(row.get("require_person_association")),
                     save_snapshot=bool(row.get("save_snapshot")),
                     sound_notification=bool(row.get("sound_notification")),
+                    instant_detection_enabled=bool(row.get("instant_detection_enabled", True)),
+                    instant_confidence_threshold=_float(
+                        row.get("instant_confidence_threshold"), 0.85
+                    ),
                     camera_ids=tuple(by_rule.get(row["id"], ())),
                 )
             )
