@@ -17,13 +17,11 @@ export function isFresh(timestamp: string | null | undefined, thresholdMs: numbe
  * reported value, but a camera whose heartbeat has stopped is shown offline.
  */
 export function effectiveCameraStatus(camera: Camera): CameraStatus {
-  if (camera.isDemo) return camera.status;
   if (!isFresh(camera.lastHeartbeatAt, CAMERA_HEARTBEAT_STALE_MS)) return "offline";
   return camera.status;
 }
 
 export function isCameraStale(camera: Camera): boolean {
-  if (camera.isDemo) return false;
   return !isFresh(camera.lastHeartbeatAt, CAMERA_HEARTBEAT_STALE_MS);
 }
 
@@ -64,10 +62,10 @@ export function systemHealthState(input: {
   nvr: NvrStatus | undefined;
   camerasOnline: number;
 }): SystemHealthState {
-  const aiUsable = aiHealthState(input.ai) === "active" || aiHealthState(input.ai) === "demo";
+  const aiUsable = aiHealthState(input.ai) === "active";
   const cameraUsable = input.camerasOnline > 0;
   if (!aiUsable && !cameraUsable) return "not_ready";
-  const nvrUsable = ["online", "demo"].includes(nvrHealthState(input.nvr));
+  const nvrUsable = nvrHealthState(input.nvr) === "online";
   if (aiUsable && cameraUsable && nvrUsable) return "ready";
   return "degraded";
 }
