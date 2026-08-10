@@ -339,7 +339,9 @@ class Orchestrator:
             "queue": {
                 "events": self.queue.event_depth(),
                 "notifications": self.queue.notification_depth(),
+                "evidence": self.queue.evidence_depth(),
             },
+
             "notifications": {
                 "telegram": {
                     "configured": self.settings.telegram_configured,
