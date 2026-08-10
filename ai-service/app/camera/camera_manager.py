@@ -32,14 +32,27 @@ class CameraManager:
             camera.channel,
         )
 
-    def sync(self, cameras: Iterable[CameraConfig]) -> None:
+    def sync(self, cameras: Iterable[CameraConfig]) -> set[str]:
+        """Syncs workers and reports camera ids whose source was replaced.
+
+        A camera is "reconfigured" when a running worker for the SAME camera id
+        is replaced because its capture-affecting signature changed. Harmless
+        metadata edits (name, location, ...) never appear here, because they are
+        not part of `_signature`. Callers use the returned ids to reset runtime
+        state that belongs to the previous stream incarnation.
+        """
         desired = {camera.id: camera for camera in cameras}
+        reconfigured: set[str] = set()
 
         for camera_id in list(self._workers):
-            if camera_id not in desired or self._signatures.get(camera_id) != self._signature(
-                desired[camera_id]
-            ):
+            if camera_id not in desired:
                 self.stop_camera(camera_id)
+                continue
+            if self._signatures.get(camera_id) != self._signature(desired[camera_id]):
+                logger.info("Camera %s source signature changed; replacing worker", camera_id)
+                reconfigured.add(camera_id)
+                self.stop_camera(camera_id)
+
 
         for camera_id, camera in desired.items():
             self._configs[camera_id] = camera
