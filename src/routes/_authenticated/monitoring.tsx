@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Grid2X2, Monitor, PanelLeftClose, PanelRightClose } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CameraSidebar } from "@/components/monitoring/CameraSidebar";
@@ -17,11 +17,9 @@ import {
   useCameras,
   useEventsSummary,
   useNvrStatus,
-  useOperationMode,
   useRecentEvents,
 } from "@/hooks/use-monitoring";
 import { useRealtimeEvents } from "@/hooks/use-realtime-events";
-import { demoDetections, demoEvents, mergeDemoCameras } from "@/services/monitoring-demo-data";
 import type { Camera } from "@/types";
 
 export const Route = createFileRoute("/_authenticated/monitoring")({
@@ -54,24 +52,10 @@ function MonitoringPage() {
   const nvr = useNvrStatus();
   const rules = useAiRules();
   useRealtimeEvents({ notify: true });
-  const opMode = useOperationMode();
-  const isDemoMode = (opMode.data ?? "demo") === "demo";
-  // Queries are already scoped to the active operation mode; in-memory demo
-  // fallbacks are only ever added in demo mode.
-  const cameras = useMemo(
-    () =>
-      isDemoMode
-        ? mergeDemoCameras(camerasQuery.data ?? [])
-        : (camerasQuery.data ?? []).filter((camera) => !camera.isDemo),
-    [camerasQuery.data, isDemoMode],
-  );
-  const events = useMemo(() => {
-    const rows = (eventsQuery.data ?? []).filter(
-      (event) => event.sourceMode === (isDemoMode ? "demo" : "live"),
-    );
-    if (!isDemoMode || rows.length >= 3) return rows;
-    return [...demoEvents, ...rows];
-  }, [eventsQuery.data, isDemoMode]);
+  // Everything below is persisted data only. There is no in-memory fallback:
+  // when the database has no cameras or events, the UI says so.
+  const cameras = useMemo(() => camerasQuery.data ?? [], [camerasQuery.data]);
+  const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
   const [selectedId, setSelectedId] = useState("");
   const [mode, setMode] = useState<"single" | "wall">("single");
   const [overlays, setOverlays] = useState(true);
@@ -87,15 +71,9 @@ function MonitoringPage() {
     setMode("single");
     setShowCameras(false);
   };
-  if (!selected)
-    return (
-      <div className="grid min-h-screen place-items-center font-mono text-xs text-muted-foreground">
-        NO CAMERAS CONFIGURED
-      </div>
-    );
-  const selectedEvent =
-    events.find((event) => event.cameraId === selected.id) ??
-    (isDemoMode && selected.isDemo ? demoEvents[0] : undefined);
+  const selectedEvent = selected
+    ? events.find((event) => event.cameraId === selected.id)
+    : undefined;
   return (
     <div className="flex h-screen min-h-[640px] w-full flex-col overflow-hidden bg-background">
       <SystemStatusBar
@@ -112,12 +90,18 @@ function MonitoringPage() {
           {activeRule ? (
             <CameraSidebar
               cameras={cameras}
-              selectedId={selected.id}
+              selectedId={selected?.id ?? ""}
               onSelect={selectCamera}
               rule={activeRule}
+              loading={camerasQuery.isLoading}
             />
           ) : (
-            <CameraSidebar cameras={cameras} selectedId={selected.id} onSelect={selectCamera} />
+            <CameraSidebar
+              cameras={cameras}
+              selectedId={selected?.id ?? ""}
+              onSelect={selectCamera}
+              loading={camerasQuery.isLoading}
+            />
           )}
         </div>
         {showCameras && (
@@ -132,7 +116,7 @@ function MonitoringPage() {
             <div className="flex min-w-0 items-center gap-2">
               <span className="font-mono text-[9px] text-primary">LIVE MONITORING</span>
               <span className="truncate text-[10px] text-muted-foreground">
-                {selected.name} · {selected.location}
+                {selected ? `${selected.name} · ${selected.location}` : "No camera selected"}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -150,7 +134,7 @@ function MonitoringPage() {
                 className="h-7 px-2 font-mono text-[9px]"
                 onClick={() => setMode("wall")}
               >
-                <Grid2X2 className="size-3" /> 4 WALL
+                <Grid2X2 className="size-3" /> WALL
               </Button>
               <Button
                 variant="ghost"
@@ -163,29 +147,51 @@ function MonitoringPage() {
               </Button>
             </div>
           </div>
-          {mode === "single" ? (
+          {!selected ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 border border-border bg-surface/40 text-center">
+              <p className="font-mono text-[11px] uppercase text-muted-foreground">
+                {camerasQuery.isLoading
+                  ? "Loading cameras…"
+                  : camerasQuery.isError
+                    ? "Camera data unavailable"
+                    : "No cameras configured"}
+              </p>
+              {!camerasQuery.isLoading && !camerasQuery.isError && (
+                <Button asChild size="sm" variant="outline" className="font-mono text-[9px]">
+                  <Link to="/cameras">CONFIGURE A CAMERA</Link>
+                </Button>
+              )}
+            </div>
+          ) : mode === "single" ? (
             <MainMonitoringViewport
               camera={selected}
-              detections={
-                isDemoMode && selected.isDemo && selected.status !== "offline" ? demoDetections : []
-              }
+              // Overlays come from the annotated AI stream or real event
+              // evidence only; nothing is simulated client-side.
+              detections={[]}
               {...(selectedEvent ? { event: selectedEvent } : {})}
-              live={!selected.isDemo}
               overlays={overlays}
               onToggleOverlays={() => setOverlays((value) => !value)}
             />
           ) : (
             <CameraWall cameras={cameras} onSelect={selectCamera} />
           )}
-          <CameraHealthStrip
-            camera={selected}
-            {...(selectedEvent ? { event: selectedEvent } : {})}
-          />
+          {selected && (
+            <CameraHealthStrip
+              camera={selected}
+              {...(activeRule ? { rule: activeRule } : {})}
+              {...(selectedEvent ? { event: selectedEvent } : {})}
+              {...(nvr.data ? { nvr: nvr.data } : {})}
+            />
+          )}
         </main>
         <div
           className={`${showEvents ? "absolute inset-y-0 right-0 z-40 block w-[350px] shadow-xl" : "hidden"} xl:relative xl:block`}
         >
-          <LiveEventPanel events={events} />
+          <LiveEventPanel
+            events={events}
+            loading={eventsQuery.isLoading}
+            error={eventsQuery.isError}
+          />
         </div>
       </div>
     </div>
