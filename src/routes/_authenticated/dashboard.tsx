@@ -87,7 +87,7 @@ function DashboardPage() {
           <StatTile
             label="Recording"
             value={fleet.data?.recording ?? 0}
-            hint="Streams being stored"
+            hint={`${fleet.data?.recordingUnknown ?? 0} unknown`}
             icon={Video}
             loading={fleet.isLoading}
           />
@@ -190,7 +190,7 @@ function DashboardPage() {
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {monitored.map((camera) => (
-              <CameraTile key={camera.id} camera={camera} />
+              <CameraTile key={camera.id} camera={camera} {...(nvr.data ? { nvr: nvr.data } : {})} />
             ))}
           </div>
         </Panel>
