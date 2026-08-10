@@ -24,6 +24,7 @@ import {
   useCameraSummary,
   useCameras,
   useCreateCamera,
+  useNvrStatus,
   useRestoreCamera,
   useToggleCameraFlag,
   useUpdateCamera,
@@ -61,6 +62,7 @@ function CamerasPage() {
   const cameras = useCameras("active");
   const archived = useCameras("archived");
   const fleet = useCameraSummary();
+  const nvr = useNvrStatus();
   const toggle = useToggleCameraFlag();
   const create = useCreateCamera();
   const update = useUpdateCamera();
