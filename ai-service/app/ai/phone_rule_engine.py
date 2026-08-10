@@ -31,6 +31,7 @@ from .temporal_state import (
     InstantGate,
     TemporalConfirmer,
     alert_key,
+    object_key,
     subject_for,
 )
 
@@ -185,8 +186,11 @@ class PhoneRuleEngine:
             confirmer.expire(now)
             return drafts
 
-        for index, phone in enumerate(phones):
-            phone_id = phone.tracking_id or f"idx{index}"
+        for phone in phones:
+            # Never array position: an untracked phone falls back to a
+            # short-lived spatial signature, so a different untracked phone
+            # elsewhere gets its own dedup scope.
+            phone_id = object_key(phone)
             association = associate(
                 phone,
                 persons,
@@ -213,7 +217,10 @@ class PhoneRuleEngine:
                 rule.instant_detection_enabled
                 and phone.confidence >= rule.effective_instant_threshold
             ):
-                instant_key = alert_key(camera.id, rule.id, "instant", f"object:{phone_id}")
+                instant_subject = subject_for(
+                    association.status, association.person_tracking_id, phone_id
+                )
+                instant_key = alert_key(camera.id, rule.id, "instant", instant_subject)
                 if instant_gate.allow(
                     instant_key, now=now, cooldown_seconds=rule.cooldown_seconds
                 ):
