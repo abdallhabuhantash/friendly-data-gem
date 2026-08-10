@@ -75,3 +75,28 @@ export const systemHealthLabel: Record<SystemHealthState, string> = {
   degraded: "Degraded",
   not_ready: "Not Ready",
 };
+
+/**
+ * Recording truth. The NVR heartbeat only carries a GLOBAL `recording_active`
+ * flag (see docs/service-health-contract.md) — there is no per-channel signal.
+ * Recording is therefore only claimed as active when a fresh camera runtime
+ * report and a fresh, explicit NVR `recordingActive = true` agree; anything
+ * less is `unknown` rather than a false REC claim.
+ */
+export type RecordingState = "active" | "stopped" | "unknown";
+
+export function effectiveRecordingState(
+  camera: Camera,
+  nvr: NvrStatus | undefined | null,
+): RecordingState {
+  if (isCameraStale(camera)) return "unknown";
+  if (!nvr || nvr.neverReported || nvr.stale || nvr.recordingActive === null) return "unknown";
+  if (nvr.recordingActive === false) return "stopped";
+  return camera.recording ? "active" : "stopped";
+}
+
+export const recordingStateLabel: Record<RecordingState, string> = {
+  active: "Active",
+  stopped: "Stopped",
+  unknown: "Unknown",
+};
