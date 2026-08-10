@@ -132,7 +132,6 @@ export function systemCapabilities(input: {
   return { detection, recording, summary: `${detectionText} · ${recordingText}` };
 }
 
-
 /**
  * Recording truth. The NVR heartbeat only carries a GLOBAL `recording_active`
  * flag (see docs/service-health-contract.md) — there is no per-channel signal.

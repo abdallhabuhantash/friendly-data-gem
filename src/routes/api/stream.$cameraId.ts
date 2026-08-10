@@ -35,7 +35,6 @@ export const Route = createFileRoute("/api/stream/$cameraId")({
           return new Response("AI service endpoint is invalid", { status: 404 });
         }
 
-
         const headers: Record<string, string> = {};
         const serviceKey = process.env["AI_SERVICE_KEY"];
         if (serviceKey) headers["X-Service-Key"] = serviceKey;
