@@ -11,3 +11,7 @@ __pycache__/
 secrets/*.json
 # ...but the safe templates are tracked.
 !secrets/*.example.json
+
+# Demo clips are local-only; the samples README stays tracked.
+samples/*
+!samples/README.md
