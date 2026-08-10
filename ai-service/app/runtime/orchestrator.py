@@ -271,6 +271,9 @@ class Orchestrator:
                 detected_at=detected_at,
             )
             for draft in drafts:
+                # `annotated` is derived from exactly the frame that produced
+                # this draft, so an instant single-frame event can never be
+                # snapshotted with a later frame where the phone has vanished.
                 self.publisher.publish(
                     draft.event, frame=annotated, save_snapshot=draft.save_snapshot
                 )
