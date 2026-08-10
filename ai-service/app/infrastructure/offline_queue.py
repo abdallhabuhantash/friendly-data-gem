@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS pending_notifications (
     delivered  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (event_id, provider)
 );
+CREATE TABLE IF NOT EXISTS pending_evidence (
+    event_id     TEXT PRIMARY KEY,
+    object_path  TEXT NOT NULL,
+    local_path   TEXT NOT NULL,
+    created_at   REAL NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    next_attempt REAL NOT NULL DEFAULT 0
+);
 """
 
 
@@ -53,6 +62,17 @@ class PendingNotification:
     provider: str
     payload: dict[str, Any]
     attempts: int
+
+
+@dataclass
+class PendingEvidence:
+    """A stored event whose snapshot still has to reach Supabase Storage."""
+
+    event_id: str
+    object_path: str
+    local_path: str
+    attempts: int
+
 
 
 class OfflineQueue:
