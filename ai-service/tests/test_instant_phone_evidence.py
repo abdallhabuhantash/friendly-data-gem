@@ -196,3 +196,27 @@ def test_no_confirmed_cheating_claim_anywhere():
         event_type, severity = classify(status)
         assert "confirmed" not in event_type
         assert severity in {"critical", "warning", "info"}
+
+
+# --- TEST I ---------------------------------------------------------------
+def test_repeated_identical_captured_frame_cannot_fake_matching_frames():
+    from app.runtime.frame_gate import FrameGate
+
+    gate = FrameGate()
+    engine = PhoneRuleEngine()
+    detections = FrameDetections((person("01", 0.4),), (phone(0.42, conf=0.9),))
+    r = rule(instant_detection_enabled=False)
+    analysed = 0
+    drafts = []
+    # The capture sequence never advances: the stream is frozen on one frame.
+    for step in range(40):
+        if not gate.accept(CAM_A.id, 7):
+            continue
+        analysed += 1
+        drafts += run(engine, r=r, detections=detections, now=step * 0.25)
+    assert analysed == 1
+    assert drafts == []
+    # A distinct captured frame is accepted again.
+    assert gate.accept(CAM_A.id, 8) is True
+    # Per-camera scope: camera B is unaffected by camera A's state.
+    assert gate.accept(CAM_B.id, 7) is True
