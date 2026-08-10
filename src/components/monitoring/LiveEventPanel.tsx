@@ -104,7 +104,15 @@ function LiveEventCard({
   );
 }
 
-export function LiveEventPanel({ events }: { events: DetectionEvent[] }) {
+export function LiveEventPanel({
+  events,
+  loading = false,
+  error = false,
+}: {
+  events: DetectionEvent[];
+  loading?: boolean;
+  error?: boolean;
+}) {
   const pending = events.filter((event) => event.status === "new").length;
   return (
     <aside className="flex min-h-0 w-full flex-col border-l border-border bg-surface lg:w-[350px] lg:shrink-0">
@@ -124,6 +132,11 @@ export function LiveEventPanel({ events }: { events: DetectionEvent[] }) {
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {events.length === 0 && (
+          <p className="p-4 text-center font-mono text-[10px] uppercase text-muted-foreground">
+            {loading ? "Loading events…" : error ? "Event data unavailable" : "No events"}
+          </p>
+        )}
         {events.map((event, index) => (
           // Signed URLs are only requested for the first few visible events.
           <LiveEventCard key={event.id} event={event} enableSnapshot={index < 8} />
