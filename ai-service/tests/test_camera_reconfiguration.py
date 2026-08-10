@@ -185,6 +185,10 @@ def refresh_stub(*, reconfigured, active):
     stub._threads = {CAM_A: AliveThread(), CAM_B: AliveThread()}
     stub._rules = []
     stub.system = SimpleNamespace(operation_mode="live")
+    # Bind the real production cleanup method to the stub.
+    stub._reset_camera_runtime = lambda camera_id: Orchestrator._reset_camera_runtime(
+        stub, camera_id
+    )
     return stub
 
 
