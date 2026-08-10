@@ -146,18 +146,19 @@ class Orchestrator:
             logger.warning("Configuration refresh failed: %s", type(exc).__name__)
             return
 
-        self.cameras.sync(cameras)
+        reconfigured = self.cameras.sync(cameras) or set()
         active = set(self.cameras.active)
+
+        # A same-id source replacement must not inherit runtime state from the
+        # previous stream incarnation, so it uses exactly the removal cleanup.
+        for camera_id in reconfigured:
+            self._reset_camera_runtime(camera_id)
 
         for camera_id in list(self._threads):
             if camera_id not in active:
                 self._threads.pop(camera_id, None)
-                self.registry.reset(camera_id)
-                self.stream_hub.drop(camera_id)
-                self._inference_fps.pop(camera_id, None)
-                self._frame_gate.reset(camera_id)
-                if self.detector:
-                    self.detector.reset_camera(camera_id)
+                self._reset_camera_runtime(camera_id)
+
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
@@ -172,7 +173,23 @@ class Orchestrator:
             self._threads[camera_id] = thread
             thread.start()
 
+    def _reset_camera_runtime(self, camera_id: str) -> None:
+        """Idempotently drops all runtime state of ONE camera.
+
+        Shared by camera removal and same-id source replacement: engine state,
+        distinct-frame gate, tracker state, published stream frame and the
+        inference FPS measurement all belong to a single stream incarnation.
+        Never touches any other camera and never stops a capture worker.
+        """
+        self.registry.reset(camera_id)
+        self.stream_hub.drop(camera_id)
+        self._inference_fps.pop(camera_id, None)
+        self._frame_gate.reset(camera_id)
+        if self.detector:
+            self.detector.reset_camera(camera_id)
+
     def _rules_for(self, camera: CameraConfig) -> list[RuleConfig]:
+
         """Every enabled, available rule assigned to this camera, any engine."""
         return [
             rule
