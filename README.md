@@ -278,3 +278,49 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Running the local AI service
+
+The Python service in `ai-service/` is a separate process from the web app. It
+reads camera or demo-video frames, runs YOLO detection, and pushes events and
+snapshots to the backend.
+
+```sh
+cd ai-service
+python -m venv .venv
+# Windows: .venv\Scripts\Activate.ps1   |   Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # then fill in the values below
+python run.py                 # Windows helper: .\run_windows.ps1
+```
+
+Required values in `ai-service/.env` (see `ai-service/.env.example` for the full
+list): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `AI_SERVICE_KEY`. The
+`AI_SERVICE_KEY` must match the web app's `AI_SERVICE_KEY`, because `/status`,
+`/stream/{camera_id}` and `/snapshot/{camera_id}` require it in the
+`X-Service-Key` header.
+
+Camera credentials are never stored in the frontend or in the repository. Copy
+`ai-service/secrets/cameras.example.json` to `ai-service/secrets/cameras.json`
+and fill in the real per-camera username/password; that file is git-ignored.
+
+### Validating without hardware
+
+Run a local MP4 through the real detection pipeline (no cloud writes, no
+Telegram, no camera):
+
+```sh
+cd ai-service
+python -m app.tools.local_video_check ./samples/demo.mp4 --save-annotated ./out
+```
+
+Full walkthrough, data-flow diagram and example local-network setup:
+[docs/local-demo-runbook.md](docs/local-demo-runbook.md).
+
+### Tests
+
+```sh
+cd ai-service
+pip install -r requirements-dev.txt
+python -m pytest tests -q
+```

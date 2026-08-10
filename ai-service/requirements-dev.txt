@@ -1,0 +1,5 @@
+# Development-only tooling for the AI service.
+# Runtime dependencies stay in requirements.txt and are NOT duplicated here.
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest==8.3.4
+ruff==0.8.4

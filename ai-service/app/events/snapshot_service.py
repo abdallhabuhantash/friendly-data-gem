@@ -133,15 +133,25 @@ class SnapshotService:
         target.write_bytes(jpeg)
         return target
 
+    @staticmethod
+    def object_path(event: AiEvent) -> str:
+        """Storage object path this event's evidence belongs at."""
+        return object_path_for(event)
+
     def upload(self, event: AiEvent, local_file: Path) -> Optional[str]:
         """Returns the stored object path, or None when the upload failed."""
+        return self.upload_file(object_path_for(event), local_file)
+
+    def upload_file(self, object_path: str, local_file: Path) -> Optional[str]:
+        """Uploads one local file to a known object path (used by evidence retry)."""
         try:
-            return self._repository.upload_snapshot(object_path_for(event), local_file)
+            return self._repository.upload_snapshot(object_path, local_file)
         except Exception as exc:  # never lose a detection over an upload error
             logger.error(
-                "Snapshot upload failed for event %s: %s", event.id, type(exc).__name__
+                "Snapshot upload failed for %s: %s", object_path, type(exc).__name__
             )
             return None
+
 
     @staticmethod
     def cleanup(local_file: Optional[Path]) -> None:

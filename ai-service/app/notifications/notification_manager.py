@@ -33,10 +33,15 @@ class NotificationManager:
     def enabled(self) -> bool:
         return self._provider is not None
 
-    def enqueue(self, event) -> bool:  # noqa: ANN001 - AiEvent
-        row = event.to_row()
-        snapshot_file = None
-        return self.enqueue_row(row, snapshot_file)
+    def enqueue(self, event, snapshot_file: Optional[str] = None) -> bool:  # noqa: ANN001
+        """Queues one event. ``snapshot_file`` is the LOCAL annotated JPEG path.
+
+        The caller (EventPublisher) owns that file and must not delete it while
+        this notification is still pending; the provider needs it to send a
+        photo instead of text.
+        """
+        return self.enqueue_row(event.to_row(), snapshot_file)
+
 
     def enqueue_row(self, row: dict[str, Any], snapshot_file: Optional[str] = None) -> bool:
         if not self._provider:

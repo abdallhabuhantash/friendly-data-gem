@@ -116,7 +116,28 @@ npm install
 npm run dev
 ```
 
+## Validating the pipeline with no cloud and no hardware
+
+Before wiring anything to the backend, run a local MP4 through the *real*
+detection code (same detector, association, temporal confirmation and
+annotation the service uses). Nothing is faked and nothing is written to the
+cloud or Telegram:
+
+```sh
+cd ai-service
+python -m app.tools.local_video_check ./samples/demo.mp4
+python -m app.tools.local_video_check ./samples/demo.mp4 --save-annotated ./out
+```
+
+Useful calibration flags: `--phone-conf`, `--person-conf`, `--assoc-conf`,
+`--min-duration`, `--min-frames`, `--every`, `--max-frames`. The tool prints
+every confirmed event with its severity, association status and duration, plus
+the achieved pipeline FPS. To publish to the backend, run the normal service
+(`python run.py`) instead — the tool stays offline on purpose.
+
 ## Verifying It Works
+
+
 
 1. Open the web application and sign in.
 2. Go to **Monitoring**. The demo camera should show an annotated live stream.
