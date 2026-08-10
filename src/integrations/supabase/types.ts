@@ -267,18 +267,21 @@ export type Database = {
       }
       service_health: {
         Row: {
+          is_demo: boolean
           online: boolean
           payload: Json
           service: string
           updated_at: string
         }
         Insert: {
+          is_demo?: boolean
           online?: boolean
           payload?: Json
           service: string
           updated_at?: string
         }
         Update: {
+          is_demo?: boolean
           online?: boolean
           payload?: Json
           service?: string
@@ -291,6 +294,7 @@ export type Database = {
           ai_service_url: string
           auto_acknowledge_minutes: number
           id: boolean
+          operation_mode: string
           retention_days: number
           snapshot_storage: string
           sound_alerts: boolean
@@ -302,6 +306,7 @@ export type Database = {
           ai_service_url?: string
           auto_acknowledge_minutes?: number
           id?: boolean
+          operation_mode?: string
           retention_days?: number
           snapshot_storage?: string
           sound_alerts?: boolean
@@ -313,6 +318,7 @@ export type Database = {
           ai_service_url?: string
           auto_acknowledge_minutes?: number
           id?: boolean
+          operation_mode?: string
           retention_days?: number
           snapshot_storage?: string
           sound_alerts?: boolean
@@ -356,6 +362,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      review_event: {
+        Args: { _event_id: string; _note?: string; _status: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "administrator" | "operator"
