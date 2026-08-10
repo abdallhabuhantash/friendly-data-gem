@@ -78,7 +78,10 @@ export function SystemStatusBar({
   const aiState = aiHealthState(ai);
   const nvrState = nvrHealthState(nvr);
   const overall = systemHealthState({ ai, nvr, camerasOnline: fleet?.online ?? 0 });
-  const recordingActive = nvr?.recordingActive === true;
+  const capabilities = systemCapabilities({ ai, nvr, camerasOnline: fleet?.online ?? 0 });
+  // Global REC is only claimed when the NVR heartbeat is actually fresh.
+  const recordingActive = nvrState === "online" && nvr?.recordingActive === true;
+
   const handleSignOut = async () => {
     await signOut();
     await navigate({ to: "/login", replace: true });
