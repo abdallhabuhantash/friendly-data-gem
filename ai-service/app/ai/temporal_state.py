@@ -1,8 +1,14 @@
 """Temporal confirmation and cooldown.
 
-A single frame never produces an event. A candidate must persist for both a
-minimum wall-clock duration and a minimum number of matching frames, and the
-same logical alert is suppressed for the configured cooldown window.
+:class:`TemporalConfirmer` itself never confirms from a single frame: a
+candidate must persist for both a minimum wall-clock duration and a minimum
+number of matching frames, and the same logical alert is suppressed for the
+configured cooldown window.
+
+Single-frame evidence is not impossible platform-wide: `PhoneRuleEngine` runs an
+independent Instant Path that may preserve strong single-frame visible-phone
+evidence as a warning. That path uses :class:`InstantGate` and shares no state
+with the temporal confirmer.
 """
 
 from __future__ import annotations
@@ -10,7 +16,43 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..domain.models import AssociationStatus
+from ..domain.geometry import BBox
+from ..domain.models import AssociationStatus, Detection
+
+#: Grid step used by :func:`spatial_signature`. Coarse enough that small jitter
+#: of one physical object maps to the same cell, fine enough that clearly
+#: separate positions do not collide.
+SPATIAL_GRID = 0.08
+SIZE_GRID = 0.04
+
+
+def spatial_signature(bbox: BBox, *, grid: float = SPATIAL_GRID) -> str:
+    """Deterministic, short-lived dedup key derived from a bbox.
+
+    This is NOT an object identity. It is only a fallback deduplication key for
+    untracked single-frame evidence, so that repeated observations of the same
+    stationary object do not spam while a clearly different position still
+    produces a distinct key.
+    """
+    cx, cy = bbox.center
+    step = max(1e-6, float(grid))
+    return "sig:{}:{}:{}:{}".format(
+        int(round(cx / step)),
+        int(round(cy / step)),
+        int(round(max(0.0, bbox.width) / SIZE_GRID)),
+        int(round(max(0.0, bbox.height) / SIZE_GRID)),
+    )
+
+
+def object_key(detection: Detection) -> str:
+    """Stable track id when available, otherwise a spatial fallback key.
+
+    Never uses array position: detection ordering must not create or merge
+    identities.
+    """
+    if detection.tracking_id:
+        return f"track:{detection.tracking_id}"
+    return spatial_signature(detection.bbox)
 
 
 @dataclass
