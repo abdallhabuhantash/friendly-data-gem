@@ -16,9 +16,18 @@ from typing import Optional
 
 from ..ai.association import associate
 from ..ai.detector import YoloDetector
+from ..ai.engine_registry import EngineRegistry, FrameContext, PhoneEngineAdapter
+from ..ai.observation_builder import build_frame_observations
 from ..ai.phone_rule_engine import PhoneRuleEngine
 from ..camera.camera_manager import CameraManager
-from ..domain.models import AssociationStatus, CameraConfig, RuleConfig, SystemConfig
+from ..domain.models import (
+    ENGINE_MOBILE_PHONE,
+    AssociationStatus,
+    CameraConfig,
+    RuleConfig,
+    SystemConfig,
+)
+
 from ..events.snapshot_service import SnapshotService, annotate_frame, encode_jpeg
 from ..events.event_publisher import EventPublisher
 from ..infrastructure.credential_provider import (
@@ -77,6 +86,10 @@ class Orchestrator:
             association_margin=settings.association_margin,
             gap_tolerance_seconds=settings.detection_gap_tolerance_seconds,
         )
+        # Explicit engine map: only the implemented phone engine is registered.
+        self.registry = EngineRegistry()
+        self.registry.register(ENGINE_MOBILE_PHONE, PhoneEngineAdapter(self.engine))
+
 
         self.detector: Optional[YoloDetector] = None
         self.system = SystemConfig()
@@ -139,7 +152,7 @@ class Orchestrator:
         for camera_id in list(self._threads):
             if camera_id not in active:
                 self._threads.pop(camera_id, None)
-                self.engine.reset(camera_id)
+                self.registry.reset(camera_id)
                 self.stream_hub.drop(camera_id)
                 self._inference_fps.pop(camera_id, None)
                 self._frame_gate.reset(camera_id)
@@ -160,9 +173,18 @@ class Orchestrator:
             thread.start()
 
     def _rules_for(self, camera: CameraConfig) -> list[RuleConfig]:
+        """Every enabled, available rule assigned to this camera, any engine."""
         return [
-            rule for rule in self._rules if rule.is_phone_engine and rule.applies_to(camera.id)
+            rule
+            for rule in self._rules
+            if rule.enabled and rule.available and rule.applies_to(camera.id)
         ]
+
+    @staticmethod
+    def _phone_rules(rules: list[RuleConfig]) -> list[RuleConfig]:
+        """Phone-engine rules only: the sole input to phone annotation logic."""
+        return [rule for rule in rules if rule.engine_key == ENGINE_MOBILE_PHONE]
+
 
     # --- inference --------------------------------------------------------
     def _inference_loop(self, camera_id: str) -> None:
@@ -200,7 +222,7 @@ class Orchestrator:
                 continue
 
             try:
-                self._process_frame(camera, frame)
+                self._process_frame(camera, frame, frame_sequence=sequence)
             except Exception as exc:  # one camera never takes down the service
                 logger.exception("Inference failed for camera %s: %s", camera.name, exc)
                 self._stop.wait(0.5)
@@ -217,18 +239,23 @@ class Orchestrator:
             if remaining > 0:
                 self._stop.wait(remaining)
 
-    def _process_frame(self, camera: CameraConfig, frame) -> None:
+    def _process_frame(
+        self, camera: CameraConfig, frame, frame_sequence: Optional[int] = None
+    ) -> None:
         assert self.detector is not None
         detections = self.detector.detect(frame, camera.id)
-        rules = self._rules_for(camera)
+        applicable_rules = self._rules_for(camera)
+        # Only mobile-phone rules may influence phone annotation/association
+        # rendering: a behavioural rule must never move Task 1 thresholds.
+        phone_rules = self._phone_rules(applicable_rules)
 
-        # Annotation uses the most permissive thresholds across all active rules
-        # so the operator sees every detection the engine will evaluate.
+        # Annotation uses the most permissive thresholds across the phone rules
+        # so the operator sees every detection the phone engine will evaluate.
         associations: dict = {}
-        if rules:
-            min_person_conf = min(r.person_confidence_threshold for r in rules)
-            min_phone_conf = min(r.confidence_threshold for r in rules)
-            min_assoc_conf = min(r.association_confidence_threshold for r in rules)
+        if phone_rules:
+            min_person_conf = min(r.person_confidence_threshold for r in phone_rules)
+            min_phone_conf = min(r.confidence_threshold for r in phone_rules)
+            min_assoc_conf = min(r.association_confidence_threshold for r in phone_rules)
             persons = tuple(
                 person
                 for person in detections.persons
@@ -255,29 +282,37 @@ class Orchestrator:
         if jpeg:
             self.stream_hub.publish(camera.id, jpeg)
 
-        if not rules:
+        if not applicable_rules:
             return
 
-        # One detection pass is evaluated by every compatible rule assigned to
-        # this camera. No inference duplication, no silently ignored rules.
+        # One detection pass feeds every applicable rule through the registry:
+        # no inference duplication, no silently ignored rules, and one failing
+        # engine never suppresses another engine's events for this frame.
         now_mono = time.monotonic()
         detected_at = datetime.now(timezone.utc)
-        for rule in rules:
-            drafts = self.engine.process_frame(
-                camera=camera,
-                rule=rule,
-                detections=detections,
-                now=now_mono,
-                source_mode=self.system.operation_mode,
-                detected_at=detected_at,
+        observations = build_frame_observations(
+            camera_id=camera.id,
+            detections=detections,
+            frame_sequence=frame_sequence,
+            observed_at=detected_at,
+            source_mode=self.system.operation_mode,
+        )
+        context = FrameContext(
+            camera=camera,
+            detections=detections,
+            observations=observations,
+            now=now_mono,
+            source_mode=self.system.operation_mode,
+            detected_at=detected_at,
+        )
+        for draft in self.registry.dispatch(applicable_rules, context):
+            # `annotated` is derived from exactly the frame that produced
+            # this draft, so an instant single-frame event can never be
+            # snapshotted with a later frame where the phone has vanished.
+            self.publisher.publish(
+                draft.event, frame=annotated, save_snapshot=draft.save_snapshot
             )
-            for draft in drafts:
-                # `annotated` is derived from exactly the frame that produced
-                # this draft, so an instant single-frame event can never be
-                # snapshotted with a later frame where the phone has vanished.
-                self.publisher.publish(
-                    draft.event, frame=annotated, save_snapshot=draft.save_snapshot
-                )
+
 
     # --- control loop -----------------------------------------------------
     def _health_payload(self) -> dict:
