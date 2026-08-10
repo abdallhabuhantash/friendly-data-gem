@@ -139,7 +139,7 @@ class Orchestrator:
         for camera_id in list(self._threads):
             if camera_id not in active:
                 self._threads.pop(camera_id, None)
-                self.engine.reset(camera_id)
+                self.registry.reset(camera_id)
                 self.stream_hub.drop(camera_id)
                 self._inference_fps.pop(camera_id, None)
                 self._frame_gate.reset(camera_id)
@@ -160,9 +160,18 @@ class Orchestrator:
             thread.start()
 
     def _rules_for(self, camera: CameraConfig) -> list[RuleConfig]:
+        """Every enabled, available rule assigned to this camera, any engine."""
         return [
-            rule for rule in self._rules if rule.is_phone_engine and rule.applies_to(camera.id)
+            rule
+            for rule in self._rules
+            if rule.enabled and rule.available and rule.applies_to(camera.id)
         ]
+
+    @staticmethod
+    def _phone_rules(rules: list[RuleConfig]) -> list[RuleConfig]:
+        """Phone-engine rules only: the sole input to phone annotation logic."""
+        return [rule for rule in rules if rule.engine_key == ENGINE_MOBILE_PHONE]
+
 
     # --- inference --------------------------------------------------------
     def _inference_loop(self, camera_id: str) -> None:
@@ -200,7 +209,7 @@ class Orchestrator:
                 continue
 
             try:
-                self._process_frame(camera, frame)
+                self._process_frame(camera, frame, frame_sequence=sequence)
             except Exception as exc:  # one camera never takes down the service
                 logger.exception("Inference failed for camera %s: %s", camera.name, exc)
                 self._stop.wait(0.5)
