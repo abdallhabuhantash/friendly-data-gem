@@ -83,3 +83,5 @@ python -m pytest
 The suite covers association, temporal confirmation, event contract shape,
 redaction, queue durability and notification safety — no camera, model weights
 or network required.
+
+Stabilization state verified after GitHub connection.
