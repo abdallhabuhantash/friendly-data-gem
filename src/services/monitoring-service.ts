@@ -358,6 +358,14 @@ export const rulesService = {
       payload.min_matching_frames = patch.minMatchingFrames;
     if (patch.requirePersonAssociation !== undefined)
       payload.require_person_association = patch.requirePersonAssociation;
+    if (patch.instantDetectionEnabled !== undefined)
+      payload.instant_detection_enabled = patch.instantDetectionEnabled;
+    if (patch.instantConfidenceThreshold !== undefined)
+      // 0..1 is enforced here as well as by the database check constraint.
+      payload.instant_confidence_threshold = Math.min(
+        1,
+        Math.max(0, patch.instantConfidenceThreshold),
+      );
     if (Object.keys(payload).length === 0) return;
     const { error } = await supabase.from("ai_rules").update(payload).eq("id", id);
     fail(error);
