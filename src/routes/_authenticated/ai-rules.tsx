@@ -75,7 +75,18 @@ function AiRulesPage() {
                 max={99}
                 disabled={!rule.available}
                 onCommit={(value) =>
-                  update.mutate({ id: rule.id, patch: { confidenceThreshold: value / 100 } })
+                  update.mutate({
+                    id: rule.id,
+                    // One truthful contract: the instant threshold can never be
+                    // weaker than the normal trigger threshold, so raising the
+                    // trigger threshold raises it in the same update.
+                    patch: {
+                      confidenceThreshold: value / 100,
+                      ...(value / 100 > rule.instantConfidenceThreshold
+                        ? { instantConfidenceThreshold: value / 100 }
+                        : {}),
+                    },
+                  })
                 }
               />
               <RuleSlider
@@ -173,10 +184,12 @@ function AiRulesPage() {
                 />
               </div>
               <RuleSlider
-                label="Instant confidence"
-                value={Math.round(rule.instantConfidenceThreshold * 100)}
+                label="Instant confidence (single frame)"
+                value={Math.round(
+                  Math.max(rule.instantConfidenceThreshold, rule.confidenceThreshold) * 100,
+                )}
                 suffix="%"
-                min={40}
+                min={Math.round(rule.confidenceThreshold * 100)}
                 max={99}
                 disabled={!rule.available || !rule.instantDetectionEnabled}
                 onCommit={(value) =>
@@ -189,8 +202,9 @@ function AiRulesPage() {
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 Instant detection keeps a very short visible phone appearance as a &quot;Mobile
                 Phone Detected&quot; warning for human review, even if it lasted only one analysed
-                frame. Because a single frame has no temporal corroboration, it requires this higher
-                confidence and never claims cheating on its own.
+                frame. Because a single frame has no temporal corroboration, it uses this
+                high-confidence single-frame threshold, which can never be lower than the trigger
+                object confidence, and it never claims cheating on its own.
               </p>
               <div className="space-y-1.5">
                 <span className="label-tech text-muted-foreground">Assigned cameras</span>

@@ -75,8 +75,9 @@ class RuleConfig:
     #: Preserves a very brief (possibly single-frame) visible phone as a
     #: `mobile_phone_detected` warning, independently of temporal confirmation.
     instant_detection_enabled: bool = True
-    #: Deliberately stricter than `confidence_threshold`: a one-frame claim has
-    #: no temporal corroboration, so only strong detections may fire it.
+    #: High-confidence single-frame threshold. Never weaker than
+    #: `confidence_threshold` (equality allowed), because a one-frame claim has
+    #: no temporal corroboration.
     instant_confidence_threshold: float = 0.85
     camera_ids: tuple[str, ...] = ()
 

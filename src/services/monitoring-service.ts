@@ -366,6 +366,22 @@ export const rulesService = {
         1,
         Math.max(0, patch.instantConfidenceThreshold),
       );
+    // Truthful contract: the stored instant threshold is exactly what the
+    // runtime uses, so it can never be weaker than the trigger threshold.
+    if (payload.confidence_threshold !== undefined) {
+      const current =
+        payload.instant_confidence_threshold ??
+        (
+          await supabase
+            .from("ai_rules")
+            .select("instant_confidence_threshold")
+            .eq("id", id)
+            .maybeSingle()
+        ).data?.instant_confidence_threshold ??
+        null;
+      if (current !== null && current < payload.confidence_threshold)
+        payload.instant_confidence_threshold = payload.confidence_threshold;
+    }
     if (Object.keys(payload).length === 0) return;
     const { error } = await supabase.from("ai_rules").update(payload).eq("id", id);
     fail(error);

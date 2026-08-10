@@ -61,13 +61,18 @@ frame — is preserved instead of being discarded:
   definitive
 - `evidence` and `snapshot_path` come from the exact triggering frame
 
-It requires `instant_confidence_threshold` (stricter than
-`confidence_threshold`, default `0.85`, never applied below it) because a
+It requires `instant_confidence_threshold`, a high-confidence single-frame
+threshold (default `0.85`) that is never weaker than `confidence_threshold` —
+equality is allowed and the invariant is enforced in the UI, in the database
+(`ai_rules_instant_threshold_not_weaker`) and in `RuleConfig` — because a
 single frame has no temporal corroboration. It means only "a mobile phone was
 visibly detected" — never confirmed cheating, never `critical`.
 
-Instant events are deduplicated per (camera, rule, tracked object) using the
-rule's `cooldown_seconds`, in state fully separate from temporal confirmation.
+Instant events are deduplicated per (camera, rule, subject) using the rule's
+`cooldown_seconds`, in state fully separate from temporal confirmation. The
+subject is the definitively associated person track when available, otherwise
+the phone track, otherwise a deterministic short-lived spatial signature of the
+phone box. Detection array position is never used as an identity.
 
 ### 2. Temporally confirmed activity
 
