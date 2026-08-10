@@ -190,7 +190,11 @@ function DashboardPage() {
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {monitored.map((camera) => (
-              <CameraTile key={camera.id} camera={camera} {...(nvr.data ? { nvr: nvr.data } : {})} />
+              <CameraTile
+                key={camera.id}
+                camera={camera}
+                {...(nvr.data ? { nvr: nvr.data } : {})}
+              />
             ))}
           </div>
         </Panel>

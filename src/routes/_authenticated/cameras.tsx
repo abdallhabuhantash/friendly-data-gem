@@ -30,11 +30,7 @@ import {
   useUpdateCamera,
 } from "@/hooks/use-monitoring";
 import { formatRelative } from "@/lib/format";
-import {
-  effectiveCameraStatus,
-  effectiveRecordingState,
-  isCameraStale,
-} from "@/lib/health";
+import { effectiveCameraStatus, effectiveRecordingState, isCameraStale } from "@/lib/health";
 import { requireAdministrator } from "@/lib/require-admin";
 import type { Camera, CameraConfigInput } from "@/types";
 
