@@ -42,6 +42,7 @@ class CaptureWorker:
         self.source = source
         self.stats = CaptureStats()
         self._frame = None
+        self._sequence = 0
         self._frame_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -67,9 +68,27 @@ class CaptureWorker:
         with self._frame_lock:
             return None if self._frame is None else self._frame.copy()
 
+    def latest_frame_with_sequence(self):
+        """Newest frame plus its capture sequence number.
+
+        The sequence lets consumers analyse each *distinct* captured frame at
+        most once, so a frozen stream can never inflate `detection_frame_count`.
+        Only the newest frame is retained: no backlog, no latency growth.
+        """
+        with self._frame_lock:
+            if self._frame is None:
+                return None, self._sequence
+            return self._frame.copy(), self._sequence
+
+    @property
+    def frame_sequence(self) -> int:
+        with self._frame_lock:
+            return self._sequence
+
     def _publish(self, frame) -> None:
         with self._frame_lock:
             self._frame = frame
+            self._sequence += 1
 
     # --- capture loop -----------------------------------------------------
     def _open(self):
