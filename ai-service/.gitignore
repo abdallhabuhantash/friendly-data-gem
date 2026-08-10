@@ -1,0 +1,8 @@
+.env
+secrets/*.json
+snapshots/
+state/
+models/*.pt
+__pycache__/
+*.pyc
+.venv/
