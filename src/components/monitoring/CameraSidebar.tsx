@@ -2,22 +2,24 @@ import { Link } from "@tanstack/react-router";
 import { Search, Video, Waves } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatusDot } from "@/components/common/StatusDot";
-import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
+import { effectiveCameraStatus, effectiveRecordingState } from "@/lib/health";
 import { cn } from "@/lib/utils";
-import type { AiRule, Camera } from "@/types";
+import type { AiRule, Camera, NvrStatus } from "@/types";
 
 function CameraListItem({
   camera,
   selected,
   onSelect,
+  nvr,
 }: {
   camera: Camera;
   selected: boolean;
   onSelect: () => void;
+  nvr?: NvrStatus;
 }) {
   // Status and REC follow heartbeat freshness, never the stored flag alone.
   const status = effectiveCameraStatus(camera);
-  const recording = !isCameraStale(camera) && camera.recording;
+  const recordingState = effectiveRecordingState(camera, nvr);
   return (
     <button
       type="button"
@@ -46,8 +48,12 @@ function CameraListItem({
             <span className={camera.aiEnabled ? "text-primary" : ""}>
               AI {camera.aiEnabled ? "active" : "off"}
             </span>
-            <span className={recording ? "text-destructive" : ""}>
-              {recording ? "● REC" : "not recording"}
+            <span className={recordingState === "active" ? "text-destructive" : ""}>
+              {recordingState === "active"
+                ? "● REC"
+                : recordingState === "stopped"
+                  ? "not recording"
+                  : "rec unknown"}
             </span>
           </div>
         </div>
@@ -67,12 +73,14 @@ export function CameraSidebar({
   onSelect,
   rule,
   loading = false,
+  nvr,
 }: {
   cameras: Camera[];
   selectedId: string;
   onSelect: (camera: Camera) => void;
   rule?: AiRule;
   loading?: boolean;
+  nvr?: NvrStatus;
 }) {
   const [filter, setFilter] = useState("");
   const visible = useMemo(
@@ -125,6 +133,7 @@ export function CameraSidebar({
             camera={camera}
             selected={camera.id === selectedId}
             onSelect={() => onSelect(camera)}
+            {...(nvr ? { nvr } : {})}
           />
         ))}
       </div>

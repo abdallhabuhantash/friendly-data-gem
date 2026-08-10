@@ -99,6 +99,7 @@ function MonitoringPage() {
               onSelect={selectCamera}
               rule={activeRule}
               loading={camerasQuery.isLoading}
+              {...(nvr.data ? { nvr: nvr.data } : {})}
             />
           ) : (
             <CameraSidebar
@@ -106,6 +107,7 @@ function MonitoringPage() {
               selectedId={selected?.id ?? ""}
               onSelect={selectCamera}
               loading={camerasQuery.isLoading}
+              {...(nvr.data ? { nvr: nvr.data } : {})}
             />
           )}
         </div>

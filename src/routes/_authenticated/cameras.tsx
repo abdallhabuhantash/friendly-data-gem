@@ -24,12 +24,13 @@ import {
   useCameraSummary,
   useCameras,
   useCreateCamera,
+  useNvrStatus,
   useRestoreCamera,
   useToggleCameraFlag,
   useUpdateCamera,
 } from "@/hooks/use-monitoring";
 import { formatRelative } from "@/lib/format";
-import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
+import { effectiveCameraStatus, effectiveRecordingState, isCameraStale } from "@/lib/health";
 import { requireAdministrator } from "@/lib/require-admin";
 import type { Camera, CameraConfigInput } from "@/types";
 
@@ -57,6 +58,7 @@ function CamerasPage() {
   const cameras = useCameras("active");
   const archived = useCameras("archived");
   const fleet = useCameraSummary();
+  const nvr = useNvrStatus();
   const toggle = useToggleCameraFlag();
   const create = useCreateCamera();
   const update = useUpdateCamera();
@@ -170,7 +172,11 @@ function CamerasPage() {
                     </td>
                     <td className="px-3 py-2">
                       <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
-                        {stale ? "unknown" : camera.recording ? "reported" : "not reporting"}
+                        {effectiveRecordingState(camera, nvr.data) === "active"
+                          ? "recording"
+                          : effectiveRecordingState(camera, nvr.data) === "stopped"
+                            ? "not recording"
+                            : "unknown"}
                       </span>
                     </td>
                     <td className="px-3 py-2">

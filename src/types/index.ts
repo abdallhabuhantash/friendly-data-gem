@@ -222,7 +222,10 @@ export interface CameraFleetSummary {
   offline: number;
   degraded: number;
   aiEnabled: number;
+  /** Only cameras whose recording state is provably active. */
   recording: number;
+  /** Cameras whose recording state cannot be proven (stale camera or NVR). */
+  recordingUnknown: number;
 }
 
 export interface EventsSummary {

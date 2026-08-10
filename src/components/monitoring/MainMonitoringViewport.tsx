@@ -3,7 +3,12 @@ import { useRef } from "react";
 import { LiveStreamPlayer } from "@/components/common/LiveStreamPlayer";
 import { Button } from "@/components/ui/button";
 import { displaySeverity } from "@/lib/event-presentation";
-import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
+import {
+  effectiveCameraStatus,
+  effectiveRecordingState,
+  isCameraStale,
+  recordingStateLabel,
+} from "@/lib/health";
 import { DetectionOverlayLayer } from "./DetectionOverlayLayer";
 import { LiveAlertOverlay } from "./LiveAlertOverlay";
 import { cn } from "@/lib/utils";
@@ -144,15 +149,7 @@ export function CameraHealthStrip({
 }) {
   // Recording is only claimed when the camera record and the NVR heartbeat
   // agree; unknown heartbeat state is reported as unknown, never as active.
-  const cameraStale = isCameraStale(camera);
-  const recording =
-    nvr?.recordingActive === null || nvr?.recordingActive === undefined || cameraStale
-      ? camera.recording
-        ? "unknown"
-        : "stopped"
-      : nvr.recordingActive && camera.recording
-        ? "active"
-        : "stopped";
+  const recording = effectiveRecordingState(camera, nvr);
   const cameraStatus = effectiveCameraStatus(camera);
   return (
     <div className="grid h-10 shrink-0 grid-cols-3 border border-t-0 border-border bg-surface sm:grid-cols-6">
@@ -175,7 +172,7 @@ export function CameraHealthStrip({
       />
       <Health
         label="Recording"
-        value={recording === "active" ? "Active" : recording === "unknown" ? "Unknown" : "Stopped"}
+        value={recordingStateLabel[recording]}
         tone={recording === "active" ? "ok" : "warn"}
       />
       <Health

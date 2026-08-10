@@ -8,6 +8,7 @@ import {
   AI_HEARTBEAT_STALE_MS,
   NVR_HEARTBEAT_STALE_MS,
   effectiveCameraStatus,
+  effectiveRecordingState,
   isFresh,
 } from "@/lib/health";
 import { effectiveSeverity } from "@/lib/event-presentation";
@@ -192,14 +193,18 @@ export const camerasService = {
   summary: async (mode?: OperationMode): Promise<CameraFleetSummary> => {
     const cameras = await camerasService.list(mode, "active");
     const statuses = cameras.map(effectiveCameraStatus);
+    // Recording counts go through the shared recording helper: the NVR flag is
+    // global, so a camera is only counted recording when both reports agree.
+    const nvr = await systemService.nvrStatus(mode ?? "live");
+    const recordingStates = cameras.map((camera) => effectiveRecordingState(camera, nvr));
     return {
       total: cameras.length,
       online: statuses.filter((status) => status === "online").length,
       offline: statuses.filter((status) => status === "offline").length,
       degraded: statuses.filter((status) => status === "degraded").length,
       aiEnabled: cameras.filter((c) => c.aiEnabled).length,
-      // Reported runtime state only — a stale camera is never counted recording.
-      recording: cameras.filter((c, index) => c.recording && statuses[index] !== "offline").length,
+      recording: recordingStates.filter((state) => state === "active").length,
+      recordingUnknown: recordingStates.filter((state) => state === "unknown").length,
     };
   },
   toggleAi: async (id: string, enabled: boolean): Promise<void> => {
