@@ -111,7 +111,7 @@ class PhoneRuleEngine:
     Two independent evidence levels share one detection pass:
 
     * PATH A (instant): a single analysed frame with a phone confidence at or
-      above the stricter instant threshold preserves the observation as a
+      at or above the high-confidence instant threshold preserves it as a
       `mobile_phone_detected` warning. It never claims cheating.
     * PATH B (temporal): unchanged duration + matching-frame + association
       reasoning, the only path that may produce the stronger event types.
