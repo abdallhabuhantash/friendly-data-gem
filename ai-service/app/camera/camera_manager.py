@@ -54,6 +54,8 @@ class CameraManager:
                 self.stop_camera(camera_id)
 
 
+
+
         for camera_id, camera in desired.items():
             self._configs[camera_id] = camera
             if camera_id in self._workers:
@@ -75,6 +77,9 @@ class CameraManager:
             worker.start()
             self._workers[camera_id] = worker
             self._signatures[camera_id] = self._signature(camera)
+
+        return reconfigured
+
 
     def stop_camera(self, camera_id: str) -> None:
         worker = self._workers.pop(camera_id, None)
