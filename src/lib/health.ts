@@ -77,6 +77,63 @@ export const systemHealthLabel: Record<SystemHealthState, string> = {
 };
 
 /**
+ * Capability-level truth. Detection and recording are INDEPENDENT capabilities:
+ * a deployment with no NVR can still be fully operational for AI detection.
+ * `ready` stays reserved for every supported service being online, so the
+ * subtext explains which optional capability is missing instead of implying
+ * that detection itself has failed.
+ */
+export type SystemCapabilities = {
+  detection: "operational" | "no_sources" | "unavailable";
+  recording: "operational" | "stopped" | "unknown" | "not_configured";
+  summary: string;
+};
+
+export function systemCapabilities(input: {
+  ai: AiServiceStatus | undefined;
+  nvr: NvrStatus | undefined;
+  camerasOnline: number;
+}): SystemCapabilities {
+  const aiState = aiHealthState(input.ai);
+  const aiUsable = aiState === "active" || aiState === "demo";
+  const detection: SystemCapabilities["detection"] = !aiUsable
+    ? "unavailable"
+    : input.camerasOnline > 0
+      ? "operational"
+      : "no_sources";
+
+  const nvrState = nvrHealthState(input.nvr);
+  const recording: SystemCapabilities["recording"] =
+    nvrState === "not_connected"
+      ? "not_configured"
+      : nvrState === "online" || nvrState === "demo"
+        ? input.nvr?.recordingActive === true
+          ? "operational"
+          : input.nvr?.recordingActive === false
+            ? "stopped"
+            : "unknown"
+        : "unknown";
+
+  const detectionText =
+    detection === "operational"
+      ? "Detection operational"
+      : detection === "no_sources"
+        ? "Detection idle — no source online"
+        : "Detection unavailable";
+  const recordingText =
+    recording === "operational"
+      ? "recording active"
+      : recording === "stopped"
+        ? "recording stopped"
+        : recording === "not_configured"
+          ? "no recording service configured"
+          : "recording state unknown";
+
+  return { detection, recording, summary: `${detectionText} · ${recordingText}` };
+}
+
+
+/**
  * Recording truth. The NVR heartbeat only carries a GLOBAL `recording_active`
  * flag (see docs/service-health-contract.md) — there is no per-channel signal.
  * Recording is therefore only claimed as active when a fresh camera runtime
