@@ -290,6 +290,10 @@ class PhoneRuleEngine:
                 ),
                 evidence=build_evidence(phone, persons, association),
             )
-            drafts.append(EventDraft(event=event, rule=rule, save_snapshot=rule.save_snapshot))
+            drafts.append(
+                EventDraft(
+                    event=event, rule=rule, save_snapshot=rule.save_snapshot, origin="temporal"
+                )
+            )
 
         return drafts
