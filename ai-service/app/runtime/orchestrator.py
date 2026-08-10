@@ -16,9 +16,18 @@ from typing import Optional
 
 from ..ai.association import associate
 from ..ai.detector import YoloDetector
+from ..ai.engine_registry import EngineRegistry, FrameContext, PhoneEngineAdapter
+from ..ai.observation_builder import build_frame_observations
 from ..ai.phone_rule_engine import PhoneRuleEngine
 from ..camera.camera_manager import CameraManager
-from ..domain.models import AssociationStatus, CameraConfig, RuleConfig, SystemConfig
+from ..domain.models import (
+    ENGINE_MOBILE_PHONE,
+    AssociationStatus,
+    CameraConfig,
+    RuleConfig,
+    SystemConfig,
+)
+
 from ..events.snapshot_service import SnapshotService, annotate_frame, encode_jpeg
 from ..events.event_publisher import EventPublisher
 from ..infrastructure.credential_provider import (
