@@ -1,7 +1,7 @@
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { VideoOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createStreamTicket } from "@/lib/stream-ticket.functions";
 
 /**
@@ -12,6 +12,12 @@ import { createStreamTicket } from "@/lib/stream-ticket.functions";
 export function LiveStreamPlayer({ cameraId, offline }: { cameraId: string; offline: boolean }) {
   const issueTicket = useServerFn(createStreamTicket);
   const [failed, setFailed] = useState(false);
+
+  // A failed stream must not stick to the next camera, and a camera that comes
+  // back online gets another attempt instead of staying blank forever.
+  useEffect(() => {
+    setFailed(false);
+  }, [cameraId, offline]);
 
   const ticket = useQuery({
     queryKey: ["stream-ticket", cameraId],

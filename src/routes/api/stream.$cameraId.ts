@@ -35,8 +35,7 @@ export const Route = createFileRoute("/api/stream/$cameraId")({
             status: 200,
             headers: {
               "content-type":
-                upstream.headers.get("content-type") ??
-                "multipart/x-mixed-replace; boundary=frame",
+                upstream.headers.get("content-type") ?? "multipart/x-mixed-replace; boundary=frame",
               "cache-control": "no-store",
             },
           });

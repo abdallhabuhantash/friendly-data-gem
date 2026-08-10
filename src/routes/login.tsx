@@ -133,11 +133,7 @@ function LoginPage() {
           )}
 
           <Button type="submit" disabled={pending} className="w-full">
-            {pending
-              ? "Authenticating…"
-              : setupMode
-                ? "Create administrator account"
-                : "Sign in"}
+            {pending ? "Authenticating…" : setupMode ? "Create administrator account" : "Sign in"}
           </Button>
 
           <div className="flex items-start gap-2 border-t border-border/70 pt-3 text-[11px] text-muted-foreground">

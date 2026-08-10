@@ -65,7 +65,9 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
         <div className="flex items-center gap-2 border-l border-border/70 px-3">
           <div className="leading-tight">
             <p className="label-tech">Pending review</p>
-            <p className="font-mono text-[11px] text-warning">{events.data?.pendingReview ?? "-"}</p>
+            <p className="font-mono text-[11px] text-warning">
+              {events.data?.pendingReview ?? "-"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 border-l border-border/70 px-3">

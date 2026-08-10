@@ -10,6 +10,7 @@ import {
 import { Panel } from "@/components/common/Panel";
 import { StatTile } from "@/components/common/StatTile";
 import { StatusDot } from "@/components/common/StatusDot";
+import { effectiveCameraStatus } from "@/lib/health";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { TopBar } from "@/components/layout/TopBar";
 import {
@@ -43,8 +44,9 @@ function DashboardPage() {
   const recent = useRecentEvents(5);
   const ai = useAiServiceStatus();
   const nvr = useNvrStatus();
+  // Heartbeat-aware: a stale camera is never presented as monitored.
   const monitored = (cameras.data ?? [])
-    .filter((camera) => camera.status !== "offline")
+    .filter((camera) => effectiveCameraStatus(camera) !== "offline")
     .slice(0, 3);
   return (
     <>

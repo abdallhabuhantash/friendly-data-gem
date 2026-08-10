@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { LiveStreamPlayer } from "@/components/common/LiveStreamPlayer";
 import { Button } from "@/components/ui/button";
 import { displaySeverity } from "@/lib/event-presentation";
+import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
 import { DetectionOverlayLayer } from "./DetectionOverlayLayer";
 import { LiveAlertOverlay } from "./LiveAlertOverlay";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,11 @@ export function MainMonitoringViewport({
   const fullscreen = () => {
     void frameRef.current?.requestFullscreen();
   };
-  const offline = camera.status === "offline";
+  // Effective status: a camera whose heartbeat stopped is shown offline even if
+  // the stored status column still says online.
+  const status = effectiveCameraStatus(camera);
+  const stale = isCameraStale(camera);
+  const offline = status === "offline";
   return (
     <div
       ref={frameRef}
@@ -105,7 +110,7 @@ export function MainMonitoringViewport({
           <span className="text-foreground">{camera.name}</span>
           <span className="text-muted-foreground">{camera.location}</span>
           <span className={offline ? "text-muted-foreground" : "text-destructive"}>
-            {offline ? "○ OFFLINE" : camera.status === "degraded" ? "◐ DEGRADED" : "● LIVE"}
+            {offline ? "○ OFFLINE" : status === "degraded" ? "◐ DEGRADED" : "● LIVE"}
           </span>
         </div>
       </div>
@@ -119,7 +124,7 @@ export function MainMonitoringViewport({
           <Cpu className="size-3" /> AI
         </span>
         <span>{camera.resolution}</span>
-        <span>{camera.fps} FPS</span>
+        <span>{stale ? "— FPS" : `${camera.fps} FPS`}</span>
         {camera.isDemo && <span className="text-warning">DEMO SOURCE</span>}
       </div>
     </div>
@@ -139,20 +144,22 @@ export function CameraHealthStrip({
 }) {
   // Recording is only claimed when the camera record and the NVR heartbeat
   // agree; unknown heartbeat state is reported as unknown, never as active.
+  const cameraStale = isCameraStale(camera);
   const recording =
-    nvr?.recordingActive === null || nvr?.recordingActive === undefined
+    nvr?.recordingActive === null || nvr?.recordingActive === undefined || cameraStale
       ? camera.recording
         ? "unknown"
         : "stopped"
       : nvr.recordingActive && camera.recording
         ? "active"
         : "stopped";
+  const cameraStatus = effectiveCameraStatus(camera);
   return (
     <div className="grid h-10 shrink-0 grid-cols-3 border border-t-0 border-border bg-surface sm:grid-cols-6">
       <Health
         label="Camera"
-        value={camera.status}
-        tone={camera.status === "online" ? "ok" : "warn"}
+        value={cameraStatus}
+        tone={cameraStatus === "online" ? "ok" : "warn"}
       />
       <Health
         label="AI rule"
@@ -234,14 +241,21 @@ export function CameraWall({
           className="group relative min-h-0 overflow-hidden border border-border bg-surface text-left"
         >
           <div className="hud-grid absolute inset-0 grid place-items-center">
-            <LiveStreamPlayer cameraId={camera.id} offline={camera.status === "offline"} />
+            <LiveStreamPlayer
+              cameraId={camera.id}
+              offline={effectiveCameraStatus(camera) === "offline"}
+            />
           </div>
           <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-background/85 px-2 py-1 font-mono text-[9px]">
             <span className="truncate">
               CH{String(camera.channel).padStart(2, "0")} · {camera.name}
             </span>
-            <span className={camera.status === "online" ? "text-success" : "text-destructive"}>
-              {camera.status.toUpperCase()}
+            <span
+              className={
+                effectiveCameraStatus(camera) === "online" ? "text-success" : "text-destructive"
+              }
+            >
+              {effectiveCameraStatus(camera).toUpperCase()}
             </span>
           </div>
           <Grid2X2 className="absolute right-2 top-2 size-3.5 text-primary" />

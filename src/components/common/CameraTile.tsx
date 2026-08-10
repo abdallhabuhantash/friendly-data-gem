@@ -1,17 +1,23 @@
 import { Cpu, Disc, VideoOff } from "lucide-react";
 import { StatusDot } from "./StatusDot";
 import { LiveStreamPlayer } from "./LiveStreamPlayer";
+import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
 import { cn } from "@/lib/utils";
 import type { Camera } from "@/types";
 
 export function CameraTile({ camera, live = false }: { camera: Camera; live?: boolean }) {
-  const offline = camera.status === "offline";
+  // Heartbeat-aware status: a camera that stopped reporting is never shown live,
+  // and REC / FPS are only claimed while the runtime report is fresh.
+  const status = effectiveCameraStatus(camera);
+  const stale = isCameraStale(camera);
+  const offline = status === "offline";
+  const recording = !stale && camera.recording;
 
   return (
     <figure
       className={cn(
         "panel group relative overflow-hidden",
-        camera.status === "degraded" && "border-warning/50",
+        status === "degraded" && "border-warning/50",
         offline && "border-destructive/40",
       )}
     >
@@ -34,20 +40,14 @@ export function CameraTile({ camera, live = false }: { camera: Camera; live?: bo
         )}
         <div className="absolute left-2 top-2 flex items-center gap-1.5 rounded-[3px] bg-background/70 px-1.5 py-0.5 backdrop-blur-sm">
           <StatusDot
-            tone={
-              camera.status === "online"
-                ? "online"
-                : camera.status === "degraded"
-                  ? "degraded"
-                  : "offline"
-            }
-            pulse={camera.status === "online"}
+            tone={status === "online" ? "online" : status === "degraded" ? "degraded" : "offline"}
+            pulse={status === "online"}
           />
           <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
             CH{String(camera.channel).padStart(2, "0")}
           </span>
         </div>
-        {camera.recording && (
+        {recording && (
           <div className="absolute right-2 top-2 flex items-center gap-1 rounded-[3px] bg-background/70 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-destructive backdrop-blur-sm">
             <Disc className="size-3 animate-pulse-dot" /> REC
           </div>
@@ -58,7 +58,7 @@ export function CameraTile({ camera, live = false }: { camera: Camera; live?: bo
           </div>
         )}
         <div className="absolute bottom-2 right-2 font-mono text-[10px] tabular-nums text-muted-foreground">
-          {camera.resolution} · {camera.fps} FPS
+          {camera.resolution} · {stale ? "— FPS" : `${camera.fps} FPS`}
         </div>
       </div>
       <figcaption className="flex items-center justify-between gap-2 border-t border-border/70 px-2.5 py-1.5">

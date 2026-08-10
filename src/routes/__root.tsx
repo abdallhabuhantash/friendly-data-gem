@@ -82,8 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "AI Smart Surveillance" },
       {
         name: "description",
-        content:
-          "Generic AI-powered video surveillance and intelligent event detection platform.",
+        content: "Generic AI-powered video surveillance and intelligent event detection platform.",
       },
       { property: "og:title", content: "AI Smart Surveillance" },
       {
