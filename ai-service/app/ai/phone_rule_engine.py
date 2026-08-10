@@ -178,6 +178,7 @@ class PhoneRuleEngine:
 
         confirmer = self._confirmer(camera.id)
         memory = self._memory_for(camera.id)
+        instant_gate = self._instant_gate(camera.id)
         drafts: list[EventDraft] = []
 
         if not phones:
@@ -205,6 +206,51 @@ class PhoneRuleEngine:
                 # only at the weakest, non-accusatory level.
                 pass
 
+            # --- PATH A: instant visible-phone evidence -------------------
+            # Independent of the temporal state machine below, so the same
+            # phone can still escalate later through PATH B.
+            if (
+                rule.instant_detection_enabled
+                and phone.confidence >= rule.effective_instant_threshold
+            ):
+                instant_key = alert_key(camera.id, rule.id, "instant", f"object:{phone_id}")
+                if instant_gate.allow(
+                    instant_key, now=now, cooldown_seconds=rule.cooldown_seconds
+                ):
+                    drafts.append(
+                        EventDraft(
+                            event=AiEvent(
+                                id=str(uuid.uuid4()),
+                                type=TYPE_PHONE_ONLY,
+                                severity="warning",
+                                camera_id=camera.id,
+                                camera_name=camera.name,
+                                rule_id=rule.id,
+                                confidence=overall_confidence(
+                                    phone.confidence, association.confidence
+                                ),
+                                trigger_object_class=CLASS_PHONE,
+                                trigger_confidence=phone.confidence,
+                                association_status=association.status,
+                                association_confidence=association.confidence,
+                                detection_duration_seconds=0.0,
+                                detection_frame_count=1,
+                                source_mode=source_mode,
+                                detected_at=detected_at or datetime.now(timezone.utc),
+                                person_tracking_id=(
+                                    association.person_tracking_id
+                                    if association.status is AssociationStatus.ASSOCIATED
+                                    else None
+                                ),
+                                evidence=build_evidence(phone, persons, association),
+                            ),
+                            rule=rule,
+                            save_snapshot=rule.save_snapshot,
+                            origin="instant",
+                        )
+                    )
+
+            # --- PATH B: temporal confirmation (unchanged) ----------------
             event_type, severity = classify(association.status)
             subject = subject_for(association.status, association.person_tracking_id, phone_id)
             key = alert_key(camera.id, rule.id, event_type, subject)
