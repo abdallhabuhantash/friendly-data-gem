@@ -217,18 +217,23 @@ class Orchestrator:
             if remaining > 0:
                 self._stop.wait(remaining)
 
-    def _process_frame(self, camera: CameraConfig, frame) -> None:
+    def _process_frame(
+        self, camera: CameraConfig, frame, frame_sequence: Optional[int] = None
+    ) -> None:
         assert self.detector is not None
         detections = self.detector.detect(frame, camera.id)
-        rules = self._rules_for(camera)
+        applicable_rules = self._rules_for(camera)
+        # Only mobile-phone rules may influence phone annotation/association
+        # rendering: a behavioural rule must never move Task 1 thresholds.
+        phone_rules = self._phone_rules(applicable_rules)
 
-        # Annotation uses the most permissive thresholds across all active rules
-        # so the operator sees every detection the engine will evaluate.
+        # Annotation uses the most permissive thresholds across the phone rules
+        # so the operator sees every detection the phone engine will evaluate.
         associations: dict = {}
-        if rules:
-            min_person_conf = min(r.person_confidence_threshold for r in rules)
-            min_phone_conf = min(r.confidence_threshold for r in rules)
-            min_assoc_conf = min(r.association_confidence_threshold for r in rules)
+        if phone_rules:
+            min_person_conf = min(r.person_confidence_threshold for r in phone_rules)
+            min_phone_conf = min(r.confidence_threshold for r in phone_rules)
+            min_assoc_conf = min(r.association_confidence_threshold for r in phone_rules)
             persons = tuple(
                 person
                 for person in detections.persons
@@ -255,29 +260,37 @@ class Orchestrator:
         if jpeg:
             self.stream_hub.publish(camera.id, jpeg)
 
-        if not rules:
+        if not applicable_rules:
             return
 
-        # One detection pass is evaluated by every compatible rule assigned to
-        # this camera. No inference duplication, no silently ignored rules.
+        # One detection pass feeds every applicable rule through the registry:
+        # no inference duplication, no silently ignored rules, and one failing
+        # engine never suppresses another engine's events for this frame.
         now_mono = time.monotonic()
         detected_at = datetime.now(timezone.utc)
-        for rule in rules:
-            drafts = self.engine.process_frame(
-                camera=camera,
-                rule=rule,
-                detections=detections,
-                now=now_mono,
-                source_mode=self.system.operation_mode,
-                detected_at=detected_at,
+        observations = build_frame_observations(
+            camera_id=camera.id,
+            detections=detections,
+            frame_sequence=frame_sequence,
+            observed_at=detected_at,
+            source_mode=self.system.operation_mode,
+        )
+        context = FrameContext(
+            camera=camera,
+            detections=detections,
+            observations=observations,
+            now=now_mono,
+            source_mode=self.system.operation_mode,
+            detected_at=detected_at,
+        )
+        for draft in self.registry.dispatch(applicable_rules, context):
+            # `annotated` is derived from exactly the frame that produced
+            # this draft, so an instant single-frame event can never be
+            # snapshotted with a later frame where the phone has vanished.
+            self.publisher.publish(
+                draft.event, frame=annotated, save_snapshot=draft.save_snapshot
             )
-            for draft in drafts:
-                # `annotated` is derived from exactly the frame that produced
-                # this draft, so an instant single-frame event can never be
-                # snapshotted with a later frame where the phone has vanished.
-                self.publisher.publish(
-                    draft.event, frame=annotated, save_snapshot=draft.save_snapshot
-                )
+
 
     # --- control loop -----------------------------------------------------
     def _health_payload(self) -> dict:
