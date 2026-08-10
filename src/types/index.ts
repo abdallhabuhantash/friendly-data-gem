@@ -166,6 +166,10 @@ export interface AiRule {
   associationConfidenceThreshold: number;
   minMatchingFrames: number;
   requirePersonAssociation: boolean;
+  /** Preserve very brief (possibly single-frame) visible-phone evidence. */
+  instantDetectionEnabled: boolean;
+  /** Stricter confidence required for single-frame instant evidence. */
+  instantConfidenceThreshold: number;
 }
 
 export interface AiServiceStatus {
