@@ -163,7 +163,35 @@ function AiRulesPage() {
                     update.mutate({ id: rule.id, patch: { requirePersonAssociation: value } })
                   }
                 />
+                <ToggleRow
+                  label="Instant phone detection"
+                  checked={rule.instantDetectionEnabled}
+                  disabled={!rule.available}
+                  onChange={(value) =>
+                    update.mutate({ id: rule.id, patch: { instantDetectionEnabled: value } })
+                  }
+                />
               </div>
+              <RuleSlider
+                label="Instant confidence"
+                value={Math.round(rule.instantConfidenceThreshold * 100)}
+                suffix="%"
+                min={40}
+                max={99}
+                disabled={!rule.available || !rule.instantDetectionEnabled}
+                onCommit={(value) =>
+                  update.mutate({
+                    id: rule.id,
+                    patch: { instantConfidenceThreshold: value / 100 },
+                  })
+                }
+              />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Instant detection keeps a very short visible phone appearance as a
+                &quot;Mobile Phone Detected&quot; warning for human review, even if it lasted only
+                one analysed frame. Because a single frame has no temporal corroboration, it
+                requires this higher confidence and never claims cheating on its own.
+              </p>
               <div className="space-y-1.5">
                 <span className="label-tech text-muted-foreground">Assigned cameras</span>
                 <div className="flex flex-wrap gap-1.5">
