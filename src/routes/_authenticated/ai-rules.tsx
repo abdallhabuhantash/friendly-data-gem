@@ -187,10 +187,10 @@ function AiRulesPage() {
                 }
               />
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Instant detection keeps a very short visible phone appearance as a
-                &quot;Mobile Phone Detected&quot; warning for human review, even if it lasted only
-                one analysed frame. Because a single frame has no temporal corroboration, it
-                requires this higher confidence and never claims cheating on its own.
+                Instant detection keeps a very short visible phone appearance as a &quot;Mobile
+                Phone Detected&quot; warning for human review, even if it lasted only one analysed
+                frame. Because a single frame has no temporal corroboration, it requires this higher
+                confidence and never claims cheating on its own.
               </p>
               <div className="space-y-1.5">
                 <span className="label-tech text-muted-foreground">Assigned cameras</span>
