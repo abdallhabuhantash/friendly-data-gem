@@ -1,17 +1,25 @@
 import { Cpu, Disc, VideoOff } from "lucide-react";
 import { StatusDot } from "./StatusDot";
 import { LiveStreamPlayer } from "./LiveStreamPlayer";
-import { effectiveCameraStatus, isCameraStale } from "@/lib/health";
+import { effectiveCameraStatus, effectiveRecordingState, isCameraStale } from "@/lib/health";
 import { cn } from "@/lib/utils";
-import type { Camera } from "@/types";
+import type { Camera, NvrStatus } from "@/types";
 
-export function CameraTile({ camera, live = false }: { camera: Camera; live?: boolean }) {
+export function CameraTile({
+  camera,
+  live = false,
+  nvr,
+}: {
+  camera: Camera;
+  live?: boolean;
+  nvr?: NvrStatus;
+}) {
   // Heartbeat-aware status: a camera that stopped reporting is never shown live,
   // and REC / FPS are only claimed while the runtime report is fresh.
   const status = effectiveCameraStatus(camera);
   const stale = isCameraStale(camera);
   const offline = status === "offline";
-  const recording = !stale && camera.recording;
+  const recording = effectiveRecordingState(camera, nvr) === "active";
 
   return (
     <figure
