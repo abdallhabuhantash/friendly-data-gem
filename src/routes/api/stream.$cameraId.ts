@@ -16,11 +16,24 @@ export const Route = createFileRoute("/api/stream/$cameraId")({
           .select("ai_service_url")
           .maybeSingle();
 
-        const base = (settings?.ai_service_url ?? "").replace(/\/$/, "");
+        const base = (settings?.ai_service_url ?? "").trim().replace(/\/$/, "");
         // The Python AI service is optional (not running in preview/demo).
         // Return 4xx instead of 5xx so it is treated as "no stream yet",
         // not as an application error.
         if (!base) return new Response("AI service is not configured", { status: 404 });
+
+        // Defence in depth: the endpoint is admin-configured, but the proxy
+        // still only ever forwards to an http(s) origin — never file:, data:
+        // or any other scheme. The destination is never client-controlled.
+        let origin: URL;
+        try {
+          origin = new URL(base);
+        } catch {
+          return new Response("AI service endpoint is invalid", { status: 404 });
+        }
+        if (origin.protocol !== "http:" && origin.protocol !== "https:") {
+          return new Response("AI service endpoint is invalid", { status: 404 });
+        }
 
         const headers: Record<string, string> = {};
         const serviceKey = process.env["AI_SERVICE_KEY"];

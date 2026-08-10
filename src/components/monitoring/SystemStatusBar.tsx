@@ -8,6 +8,7 @@ import {
   aiHealthState,
   componentHealthLabel,
   nvrHealthState,
+  systemCapabilities,
   systemHealthLabel,
   systemHealthState,
 } from "@/lib/health";
@@ -39,14 +40,19 @@ function Metric({
   value,
   online = true,
   tone = "auto",
+  detail,
 }: {
   label: string;
   value: string;
   online?: boolean;
   tone?: "auto" | "warning";
+  detail?: string;
 }) {
   return (
-    <div className="flex h-full items-center gap-2 border-l border-border/70 px-3">
+    <div
+      className="flex h-full items-center gap-2 border-l border-border/70 px-3"
+      title={detail ?? undefined}
+    >
       <StatusDot
         tone={tone === "warning" ? "degraded" : online ? "online" : "offline"}
         pulse={online}
@@ -78,7 +84,10 @@ export function SystemStatusBar({
   const aiState = aiHealthState(ai);
   const nvrState = nvrHealthState(nvr);
   const overall = systemHealthState({ ai, nvr, camerasOnline: fleet?.online ?? 0 });
-  const recordingActive = nvr?.recordingActive === true;
+  const capabilities = systemCapabilities({ ai, nvr, camerasOnline: fleet?.online ?? 0 });
+  // Global REC is only claimed when the NVR heartbeat is actually fresh.
+  const recordingActive = nvrState === "online" && nvr?.recordingActive === true;
+
   const handleSignOut = async () => {
     await signOut();
     await navigate({ to: "/login", replace: true });
@@ -117,6 +126,7 @@ export function SystemStatusBar({
             value={systemHealthLabel[overall]}
             online={overall === "ready"}
             tone={overall === "degraded" ? "warning" : "auto"}
+            detail={capabilities.summary}
           />
           <Metric
             label="Cameras"

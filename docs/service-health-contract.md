@@ -82,3 +82,21 @@ Per-camera `REC` badges are only rendered for `active`; `unknown` is shown as
 text rather than claimed as recording. A real per-camera signal (per-channel
 recording state in the NVR heartbeat) is required before the UI can attribute
 recording to an individual channel with certainty.
+
+## Capability independence
+
+AI detection, camera/source connectivity and recording are three INDEPENDENT
+capabilities. The console derives them separately (`systemCapabilities` in
+`src/lib/health.ts`):
+
+- **Detection** — `operational` when the AI heartbeat is fresh and at least one
+  configured source is online, `idle` when the service runs but no source is
+  online, `unavailable` when the AI service never reported or is stale.
+- **Recording** — `not_configured` when no NVR (or other recording service) ever
+  reported, otherwise derived from the NVR heartbeat only.
+
+A missing NVR never makes the AI heartbeat false and never blocks detection. The
+overall `System` indicator stays reserved for "every supported service online",
+so it reads `Degraded` when an optional capability is absent; the accompanying
+capability subtext states truthfully which capability is missing (for example
+"Detection operational · no recording service configured").
