@@ -19,20 +19,16 @@ export function useRealtimeEvents({ notify = false }: { notify?: boolean } = {})
   useEffect(() => {
     const channel = supabase
       .channel("events-stream")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "events" },
-        (payload) => {
-          void queryClient.invalidateQueries({ queryKey: ["events"] });
-          void queryClient.invalidateQueries({ queryKey: ["reports"] });
-          if (notify && payload.eventType === "INSERT") {
-            const row = payload.new as { type?: string; camera_name?: string };
-            toast.warning(LABEL[row.type ?? ""] ?? "Detection event", {
-              description: `${row.camera_name ?? "Camera"} — requires human review`,
-            });
-          }
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, (payload) => {
+        void queryClient.invalidateQueries({ queryKey: ["events"] });
+        void queryClient.invalidateQueries({ queryKey: ["reports"] });
+        if (notify && payload.eventType === "INSERT") {
+          const row = payload.new as { type?: string; camera_name?: string };
+          toast.warning(LABEL[row.type ?? ""] ?? "Detection event", {
+            description: `${row.camera_name ?? "Camera"} — requires human review`,
+          });
+        }
+      })
       .subscribe();
 
     return () => {

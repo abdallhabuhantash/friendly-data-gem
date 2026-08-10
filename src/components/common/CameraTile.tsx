@@ -40,13 +40,7 @@ export function CameraTile({ camera, live = false }: { camera: Camera; live?: bo
         )}
         <div className="absolute left-2 top-2 flex items-center gap-1.5 rounded-[3px] bg-background/70 px-1.5 py-0.5 backdrop-blur-sm">
           <StatusDot
-            tone={
-              status === "online"
-                ? "online"
-                : status === "degraded"
-                  ? "degraded"
-                  : "offline"
-            }
+            tone={status === "online" ? "online" : status === "degraded" ? "degraded" : "offline"}
             pulse={status === "online"}
           />
           <span className="font-mono text-[10px] uppercase tracking-[0.14em]">

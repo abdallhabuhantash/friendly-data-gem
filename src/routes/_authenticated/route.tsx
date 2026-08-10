@@ -13,7 +13,9 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  const monitoring = useRouterState({ select: (state) => state.location.pathname === "/monitoring" });
+  const monitoring = useRouterState({
+    select: (state) => state.location.pathname === "/monitoring",
+  });
   return (
     <div className="flex min-h-screen w-full bg-background">
       {!monitoring && <AppSidebar />}

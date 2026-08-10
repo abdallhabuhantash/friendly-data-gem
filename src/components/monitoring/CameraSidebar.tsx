@@ -31,13 +31,7 @@ function CameraListItem({
     >
       <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
         <StatusDot
-          tone={
-            status === "online"
-              ? "online"
-              : status === "degraded"
-                ? "degraded"
-                : "offline"
-          }
+          tone={status === "online" ? "online" : status === "degraded" ? "degraded" : "offline"}
           pulse={status === "online"}
         />
         <div className="min-w-0">
