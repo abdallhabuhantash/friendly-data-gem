@@ -43,7 +43,13 @@ class Settings(BaseSettings):
     config_refresh_seconds: float = 10.0
     health_heartbeat_seconds: float = 10.0
     camera_heartbeat_seconds: float = 10.0
-    inference_max_fps: float = 10.0
+    # 0 (default) removes the artificial ceiling: each camera's inference loop
+    # then runs exactly as fast as real model execution allows, which matters
+    # for phones that are visible for only a fraction of a second. Set a
+    # positive value to cap CPU/GPU usage. Actual throughput always depends on
+    # hardware, model, resolution and camera count — no FPS is promised.
+    inference_max_fps: float = 0.0
+    # Never skip frames by default: a skipped frame is evidence thrown away.
     process_every_n_frames: int = 1
 
     # --- Detection tuning ---

@@ -72,7 +72,19 @@ class RuleConfig:
     require_person_association: bool = True
     save_snapshot: bool = True
     sound_notification: bool = False
+    #: Preserves a very brief (possibly single-frame) visible phone as a
+    #: `mobile_phone_detected` warning, independently of temporal confirmation.
+    instant_detection_enabled: bool = True
+    #: Deliberately stricter than `confidence_threshold`: a one-frame claim has
+    #: no temporal corroboration, so only strong detections may fire it.
+    instant_confidence_threshold: float = 0.85
     camera_ids: tuple[str, ...] = ()
+
+    @property
+    def effective_instant_threshold(self) -> float:
+        """Never weaker than the normal trigger threshold, always within 0..1."""
+        value = max(float(self.instant_confidence_threshold), float(self.confidence_threshold))
+        return min(1.0, max(0.0, value))
 
     def applies_to(self, camera_id: str) -> bool:
         """Empty scope means the rule applies to every AI-enabled camera."""

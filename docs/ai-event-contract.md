@@ -43,6 +43,44 @@ from free text — the reviewer `note` is for humans only.
 so overlays scale with any viewport size. `role` is `person`,
 `trigger_object`, or any future role.
 
+## Two evidence levels
+
+The `mobile_phone_detection` engine produces two distinct, independent kinds of
+evidence. Both are ordinary rows in `public.events`; no extra column is needed.
+
+### 1. Instant visible-phone evidence
+
+A phone that is visible for only a very short time — possibly a single analysed
+frame — is preserved instead of being discarded:
+
+- `type` = `mobile_phone_detected`, `severity` = `warning`, `status` = `new`
+- `detection_frame_count` = `1` for a true one-frame trigger
+- `detection_duration_seconds` = `0.0` (or the truthful measured value)
+- `association_status` / `association_confidence` = the real result for that
+  frame; `person_tracking_id` is present only when the association engine is
+  definitive
+- `evidence` and `snapshot_path` come from the exact triggering frame
+
+It requires `instant_confidence_threshold` (stricter than
+`confidence_threshold`, default `0.85`, never applied below it) because a
+single frame has no temporal corroboration. It means only "a mobile phone was
+visibly detected" — never confirmed cheating, never `critical`.
+
+Instant events are deduplicated per (camera, rule, tracked object) using the
+rule's `cooldown_seconds`, in state fully separate from temporal confirmation.
+
+### 2. Temporally confirmed activity
+
+Unchanged: `min_duration_seconds` **and** `min_matching_frames` **and**
+association decide whether `possible_cheating_activity` or
+`suspicious_cheating_activity` is justified. An earlier instant warning never
+resets, consumes or suppresses this escalation, so the same phone may yield one
+instant warning and, later, one stronger temporal event.
+
+Each analysed frame counted in `detection_frame_count` is a **distinct captured
+frame**; a frozen stream cannot satisfy `min_matching_frames` by being
+reprocessed.
+
 ## Alert semantics
 
 - `associated` + duration ≥ rule threshold → `suspicious_cheating_activity`.
@@ -56,7 +94,8 @@ so overlays scale with any viewport size. `role` is `person`,
 `ai_rules`: `confidence_threshold` (trigger object),
 `person_confidence_threshold`, `association_confidence_threshold`,
 `min_duration_seconds` (numeric), `min_matching_frames`, `cooldown_seconds`,
-`require_person_association`, `save_snapshot`, `sound_notification`.
+`require_person_association`, `save_snapshot`, `sound_notification`,
+`instant_detection_enabled`, `instant_confidence_threshold`.
 Camera scope comes from `ai_rule_cameras`.
 
 ## Service health heartbeats (`service_health`)

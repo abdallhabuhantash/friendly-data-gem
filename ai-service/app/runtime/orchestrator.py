@@ -30,6 +30,7 @@ from ..infrastructure.offline_queue import OfflineQueue
 from ..infrastructure.supabase_repository import DuplicateEventError, SupabaseRepository
 from ..notifications.notification_manager import NotificationManager
 from ..notifications.telegram import TelegramProvider
+from .frame_gate import FrameGate
 from .health_reporter import HealthReporter, measure_gpu_load
 from .stream_hub import StreamHub
 
@@ -84,6 +85,7 @@ class Orchestrator:
         self._threads: dict[str, threading.Thread] = {}
         self._control: Optional[threading.Thread] = None
         self._inference_fps: dict[str, float] = {}
+        self._frame_gate = FrameGate()
         self._started_at = time.monotonic()
 
     # --- lifecycle --------------------------------------------------------
@@ -140,6 +142,7 @@ class Orchestrator:
                 self.engine.reset(camera_id)
                 self.stream_hub.drop(camera_id)
                 self._inference_fps.pop(camera_id, None)
+                self._frame_gate.reset(camera_id)
                 if self.detector:
                     self.detector.reset_camera(camera_id)
 
@@ -163,7 +166,11 @@ class Orchestrator:
 
     # --- inference --------------------------------------------------------
     def _inference_loop(self, camera_id: str) -> None:
-        min_interval = 1.0 / max(0.5, float(self.settings.inference_max_fps))
+        # `inference_max_fps <= 0` means "run as fast as the model actually
+        # allows" — the loop is then paced only by real inference time, never by
+        # an artificial ceiling. No frame queue exists either way.
+        max_fps = float(self.settings.inference_max_fps)
+        min_interval = (1.0 / max_fps) if max_fps > 0 else 0.0
         processed = 0
         window_start = time.monotonic()
         window_frames = 0
@@ -175,16 +182,21 @@ class Orchestrator:
                 return
 
             cycle_start = time.monotonic()
-            frame = worker.latest_frame()
+            frame, sequence = worker.latest_frame_with_sequence()
             if frame is None:
                 self._stop.wait(0.2)
+                continue
+            if not self._frame_gate.accept(camera_id, sequence):
+                # The same captured frame must never be analysed twice: a frozen
+                # stream would otherwise fake multiple matching frames.
+                self._stop.wait(0.005)
                 continue
 
             processed += 1
             if self.settings.process_every_n_frames > 1 and (
                 processed % int(self.settings.process_every_n_frames)
             ):
-                self._stop.wait(0.01)
+                self._stop.wait(0.005)
                 continue
 
             try:
@@ -260,6 +272,9 @@ class Orchestrator:
                 detected_at=detected_at,
             )
             for draft in drafts:
+                # `annotated` is derived from exactly the frame that produced
+                # this draft, so an instant single-frame event can never be
+                # snapshotted with a later frame where the phone has vanished.
                 self.publisher.publish(
                     draft.event, frame=annotated, save_snapshot=draft.save_snapshot
                 )

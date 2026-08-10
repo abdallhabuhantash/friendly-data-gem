@@ -85,7 +85,7 @@ def test_short_detection_does_not_create_an_event():
     now = time.monotonic()
     drafts = engine.process_frame(
         camera=CAMERA,
-        rule=rule(),
+        rule=rule(instant_detection_enabled=False),
         detections=FrameDetections((person("01", 0.4),), (phone(0.42),)),
         now=now,
         source_mode="demo",
@@ -101,7 +101,7 @@ def test_sustained_detection_creates_one_event_then_cools_down():
     for step in range(12):
         produced += engine.process_frame(
             camera=CAMERA,
-            rule=rule(),
+            rule=rule(instant_detection_enabled=False),
             detections=detections,
             now=start + step * 0.25,
             source_mode="demo",
@@ -122,7 +122,7 @@ def test_event_row_matches_the_contract():
     for step in range(12):
         drafts += engine.process_frame(
             camera=CAMERA,
-            rule=rule(),
+            rule=rule(instant_detection_enabled=False),
             detections=detections,
             now=start + step * 0.25,
             source_mode="live",

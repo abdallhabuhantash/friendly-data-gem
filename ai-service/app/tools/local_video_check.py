@@ -57,6 +57,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--assoc-conf", type=float, default=0.55)
     parser.add_argument("--min-duration", type=float, default=1.5)
     parser.add_argument("--min-frames", type=int, default=5)
+    parser.add_argument("--instant-conf", type=float, default=0.85)
+    parser.add_argument(
+        "--no-instant",
+        action="store_true",
+        help="Disable instant single-frame visible-phone evidence (temporal path only)",
+    )
     return parser.parse_args(argv)
 
 
@@ -73,6 +79,8 @@ def _rule(args: argparse.Namespace) -> RuleConfig:
         association_confidence_threshold=args.assoc_conf,
         min_duration_seconds=args.min_duration,
         min_matching_frames=args.min_frames,
+        instant_detection_enabled=not args.no_instant,
+        instant_confidence_threshold=args.instant_conf,
         save_snapshot=bool(args.save_annotated),
     )
 
@@ -178,8 +186,9 @@ def main(argv: list[str] | None = None) -> int:
         for draft in drafts:
             confirmed += 1
             event = draft.event
+            origin = "instant" if draft.origin == "instant" else "temporal"
             print(
-                f"[confirmed] {event.type} | severity={event.severity} | "
+                f"[{origin}] {event.type} | severity={event.severity} | "
                 f"association={event.association_status} | person_id={event.person_tracking_id} | "
                 f"duration={event.detection_duration_seconds:.1f}s"
             )
@@ -191,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
     elapsed = max(1e-6, time.monotonic() - started)
     print(
         f"\nFrames read: {read} | analysed: {processed} | "
-        f"pipeline FPS: {processed / elapsed:.2f} | confirmed events: {confirmed}"
+        f"pipeline FPS: {processed / elapsed:.2f} | events: {confirmed} "
+        f"(instant + temporal)"
     )
     if out_dir:
         print(f"Annotated frames written to: {out_dir}")

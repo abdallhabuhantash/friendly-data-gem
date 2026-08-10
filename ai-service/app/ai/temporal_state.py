@@ -123,6 +123,29 @@ class TemporalConfirmer:
         return len(self._candidates)
 
 
+class InstantGate:
+    """Deduplication for single-frame ("instant") evidence.
+
+    Completely separate state from :class:`TemporalConfirmer`, so an instant
+    warning can never reset, consume or suppress a temporal candidate. Scope is
+    always (camera, rule, subject), so no camera or rule suppresses another.
+    """
+
+    def __init__(self) -> None:
+        self._fired: dict[tuple[str, ...], float] = {}
+
+    def allow(self, key: tuple[str, ...], *, now: float, cooldown_seconds: float) -> bool:
+        last = self._fired.get(key)
+        if last is not None and (now - last) < float(cooldown_seconds):
+            return False
+        self._fired[key] = now
+        return True
+
+    def reset(self) -> None:
+        self._fired.clear()
+
+
+
 @dataclass
 class AssociationMemory:
     """Short-lived per-phone association history used for temporal continuity."""
