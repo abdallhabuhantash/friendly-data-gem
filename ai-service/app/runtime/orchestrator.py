@@ -30,6 +30,7 @@ from ..infrastructure.offline_queue import OfflineQueue
 from ..infrastructure.supabase_repository import DuplicateEventError, SupabaseRepository
 from ..notifications.notification_manager import NotificationManager
 from ..notifications.telegram import TelegramProvider
+from .frame_gate import FrameGate
 from .health_reporter import HealthReporter, measure_gpu_load
 from .stream_hub import StreamHub
 
@@ -84,6 +85,7 @@ class Orchestrator:
         self._threads: dict[str, threading.Thread] = {}
         self._control: Optional[threading.Thread] = None
         self._inference_fps: dict[str, float] = {}
+        self._frame_gate = FrameGate()
         self._started_at = time.monotonic()
 
     # --- lifecycle --------------------------------------------------------
@@ -140,6 +142,7 @@ class Orchestrator:
                 self.engine.reset(camera_id)
                 self.stream_hub.drop(camera_id)
                 self._inference_fps.pop(camera_id, None)
+                self._frame_gate.reset(camera_id)
                 if self.detector:
                     self.detector.reset_camera(camera_id)
 
@@ -171,7 +174,6 @@ class Orchestrator:
         processed = 0
         window_start = time.monotonic()
         window_frames = 0
-        last_sequence = -1
 
         while not self._stop.is_set():
             worker = self.cameras.worker(camera_id)
@@ -184,12 +186,11 @@ class Orchestrator:
             if frame is None:
                 self._stop.wait(0.2)
                 continue
-            if sequence == last_sequence:
+            if not self._frame_gate.accept(camera_id, sequence):
                 # The same captured frame must never be analysed twice: a frozen
                 # stream would otherwise fake multiple matching frames.
                 self._stop.wait(0.005)
                 continue
-            last_sequence = sequence
 
             processed += 1
             if self.settings.process_every_n_frames > 1 and (
