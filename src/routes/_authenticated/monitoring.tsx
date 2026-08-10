@@ -62,7 +62,12 @@ function MonitoringPage() {
   const [showCameras, setShowCameras] = useState(false);
   const [showEvents, setShowEvents] = useState(true);
   useEffect(() => {
-    if (!selectedId && cameras[0]) setSelectedId(cameras[0].id);
+    // Keep the selection valid when cameras are added, archived or removed.
+    if (cameras.length === 0) {
+      if (selectedId) setSelectedId("");
+      return;
+    }
+    if (!cameras.some((camera) => camera.id === selectedId)) setSelectedId(cameras[0]!.id);
   }, [cameras, selectedId]);
   const selected = cameras.find((camera) => camera.id === selectedId) ?? cameras[0];
   const activeRule = (rules.data ?? []).find((rule) => rule.enabled);
