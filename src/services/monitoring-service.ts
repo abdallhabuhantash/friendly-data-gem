@@ -8,6 +8,7 @@ import {
   AI_HEARTBEAT_STALE_MS,
   NVR_HEARTBEAT_STALE_MS,
   effectiveCameraStatus,
+  effectiveRecordingState,
   isFresh,
 } from "@/lib/health";
 import { effectiveSeverity } from "@/lib/event-presentation";
