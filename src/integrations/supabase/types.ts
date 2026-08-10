@@ -55,6 +55,8 @@ export type Database = {
           enabled: boolean
           engine_key: string | null
           id: string
+          instant_confidence_threshold: number
+          instant_detection_enabled: boolean
           min_duration_seconds: number
           min_matching_frames: number
           name: string
@@ -74,6 +76,8 @@ export type Database = {
           enabled?: boolean
           engine_key?: string | null
           id?: string
+          instant_confidence_threshold?: number
+          instant_detection_enabled?: boolean
           min_duration_seconds?: number
           min_matching_frames?: number
           name: string
@@ -93,6 +97,8 @@ export type Database = {
           enabled?: boolean
           engine_key?: string | null
           id?: string
+          instant_confidence_threshold?: number
+          instant_detection_enabled?: boolean
           min_duration_seconds?: number
           min_matching_frames?: number
           name?: string
