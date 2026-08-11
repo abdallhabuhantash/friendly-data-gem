@@ -230,6 +230,7 @@ def associate_pose_frame(
             )
             for person_index, person in enumerate(persons)
         )
+        pose_facts[pose_index] = facts
         eligible = tuple(item for item in facts if item.eligible)
         if not eligible:
             resolved[pose_index] = PoseMatch(
@@ -277,7 +278,7 @@ def associate_pose_frame(
                     pose_index=pose_index,
                     status=PoseMatchStatus.AMBIGUOUS,
                     reason="multiple_pose_instances_compete_for_person",
-                    candidates=(winner,),
+                    candidates=pose_facts.get(pose_index, (winner,)),
                 )
             else:
                 resolved[pose_index] = PoseMatch(
@@ -285,7 +286,7 @@ def associate_pose_frame(
                     status=PoseMatchStatus.ASSOCIATED,
                     person_tracking_id=winner.person_tracking_id,
                     person_index=person_index,
-                    candidates=(winner,),
+                    candidates=pose_facts.get(pose_index, (winner,)),
                 )
 
     matches = tuple(resolved[index] for index in sorted(resolved))
