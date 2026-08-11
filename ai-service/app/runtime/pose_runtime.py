@@ -208,8 +208,12 @@ class PoseRuntime:
         self._wake.set()
         with self._thread_lock:
             thread = self._thread
+            if thread is None:
+                # Nothing alive: any earlier timeout condition is resolved.
+                self._stop_timed_out = False
         if thread is None:
             return
+
         thread.join(timeout=timeout)
         with self._thread_lock:
             if thread.is_alive():
