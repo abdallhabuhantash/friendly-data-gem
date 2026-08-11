@@ -195,7 +195,7 @@ class Orchestrator:
                 )
             runtime = PoseRuntime(
                 provider,
-                min_interval_seconds=settings.pose_min_interval_seconds,
+                min_interval_seconds=float(settings.pose_min_interval_seconds or 0.0),
                 association_spec=spec,
             )
             runtime.start()
