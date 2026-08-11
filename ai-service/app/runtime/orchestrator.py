@@ -432,7 +432,8 @@ class Orchestrator:
 
     def _process_frame(
         self, camera: CameraConfig, frame, frame_sequence: Optional[int] = None
-    ) -> None:
+    ) -> Optional[FrameObservations]:
+        """Analyses one frame and returns its derived observation view."""
         assert self.detector is not None
         detections = self.detector.detect(frame, camera.id)
         applicable_rules = self._rules_for(camera)
@@ -473,12 +474,8 @@ class Orchestrator:
         if jpeg:
             self.stream_hub.publish(camera.id, jpeg)
 
-        if not applicable_rules:
-            return
-
-        # One detection pass feeds every applicable rule through the registry:
-        # no inference duplication, no silently ignored rules, and one failing
-        # engine never suppresses another engine's events for this frame.
+        # The observation view is derived from THIS frame and is independent of
+        # rule configuration, so pose scheduling never depends on Task 1 rules.
         now_mono = time.monotonic()
         detected_at = datetime.now(timezone.utc)
         observations = build_frame_observations(
@@ -488,6 +485,13 @@ class Orchestrator:
             observed_at=detected_at,
             source_mode=self.system.operation_mode,
         )
+
+        if not applicable_rules:
+            return observations
+
+        # One detection pass feeds every applicable rule through the registry:
+        # no inference duplication, no silently ignored rules, and one failing
+        # engine never suppresses another engine's events for this frame.
         context = FrameContext(
             camera=camera,
             detections=detections,
@@ -496,6 +500,7 @@ class Orchestrator:
             source_mode=self.system.operation_mode,
             detected_at=detected_at,
         )
+
         for draft in self.registry.dispatch(applicable_rules, context):
             # `annotated` is derived from exactly the frame that produced
             # this draft, so an instant single-frame event can never be
