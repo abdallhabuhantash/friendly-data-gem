@@ -132,6 +132,9 @@ def runtime_stub():
         registry=FakeRegistry(),
         stream_hub=StreamHub(),
         _inference_fps={CAM_A: 11.0, CAM_B: 7.0},
+        _processed_frames={CAM_A: 9, CAM_B: 4},
+        _fps_window={CAM_A: (1.0, 3), CAM_B: (1.0, 2)},
+        _seen_generation={CAM_A: 1, CAM_B: 1},
         _frame_gate=FrameGate(),
         detector=FakeDetector(),
     )
@@ -151,6 +154,8 @@ def test_runtime_reset_clears_only_the_target_camera():
     assert stub.stream_hub.has(CAM_A) is False
     assert stub.stream_hub.latest(CAM_B) == b"b-jpeg"
     assert CAM_A not in stub._inference_fps
+    assert CAM_A not in stub._processed_frames
+    assert CAM_A not in stub._fps_window
     assert stub._inference_fps[CAM_B] == 7.0
     # E: a fresh, LOWER sequence from the replacement worker is accepted at once.
     assert stub._frame_gate.accept(CAM_A, 1) is True
@@ -172,24 +177,35 @@ class AliveThread:
         return True
 
 
-def refresh_stub(*, reconfigured, active):
+def refresh_stub(*, reconfigured, active, generations=None):
+    import threading
+
     stub = runtime_stub()
     stub.repository = SimpleNamespace(
         system_config=lambda: SimpleNamespace(operation_mode="live"),
         cameras=lambda mode: [],
         rules=lambda: [],
     )
+    locks: dict[str, threading.RLock] = {}
+    gens = generations if generations is not None else {CAM_A: 2, CAM_B: 1}
     stub.cameras = SimpleNamespace(
-        sync=lambda cameras: set(reconfigured), active={cid: object() for cid in active}
+        sync=lambda cameras: set(reconfigured),
+        active={cid: object() for cid in active},
+        lock=lambda cid: locks.setdefault(cid, threading.RLock()),
+        generation=lambda cid: gens.get(cid),
     )
     stub._threads = {CAM_A: AliveThread(), CAM_B: AliveThread()}
     stub._rules = []
     stub.system = SimpleNamespace(operation_mode="live")
-    # Bind the real production cleanup method to the stub.
+    # Bind the real production cleanup methods to the stub.
     stub._reset_camera_runtime = lambda camera_id: Orchestrator._reset_camera_runtime(
         stub, camera_id
     )
+    stub._transition_generation = lambda camera_id: Orchestrator._transition_generation(
+        stub, camera_id
+    )
     return stub
+
 
 
 def test_reconfigured_camera_is_cleaned_without_dropping_its_thread():
