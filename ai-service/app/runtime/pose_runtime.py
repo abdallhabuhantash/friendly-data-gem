@@ -86,12 +86,15 @@ class PoseRuntimeResult:
 
 @dataclass
 class _CameraMetrics:
-    """Measured per-camera diagnostics. Never estimated, never model accuracy."""
+    """Measured per-camera diagnostics for ONE camera incarnation.
+
+    Nothing produced by an ended incarnation is ever counted here: stale
+    completions are accounted separately by the runtime.
+    """
 
     submitted: int = 0
     processed: int = 0
     replaced_pending: int = 0
-    dropped_stale: int = 0
     cadence_skipped: int = 0
     provider_failures: int = 0
     association_degraded: int = 0
@@ -109,7 +112,6 @@ class _CameraMetrics:
             "submitted": self.submitted,
             "processed": self.processed,
             "replaced_pending": self.replaced_pending,
-            "dropped_stale": self.dropped_stale,
             "cadence_skipped": self.cadence_skipped,
             "provider_failures": self.provider_failures,
             "association_degraded": self.association_degraded,
@@ -125,6 +127,7 @@ class _CameraMetrics:
                 round(self.measured_pose_fps, 2) if self.measured_pose_fps is not None else None
             ),
         }
+
 
 
 class PoseRuntime:
