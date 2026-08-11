@@ -283,28 +283,56 @@ class PoseRuntime:
         copy_frame: Callable[[], Any],
         source_mode: Optional[str] = None,
     ) -> bool:
-        """Cadence-gated submission. Copies the frame ONLY when admitted."""
+        """Cadence-gated submission. Copies the frame ONLY when admitted.
+
+        Cadence accounting is *reserved* around the copy and rolled back when no
+        job is actually accepted, so a failed copy or an ended incarnation never
+        consumes the camera's next pose cadence slot.
+        """
         with self._lock:
             if not self._cadence_admits_locked(camera_id, generation):
                 metrics = self._metrics.get(camera_id)
                 if metrics is not None:
                     metrics.cadence_skipped += 1
                 return False
-            self._last_submitted[camera_id] = self._clock()
-        # Exactly one intentional frame copy, for an admitted frame only.
-        frame = copy_frame()
-        return self.submit(
-            PoseJob(
-                camera_id=camera_id,
-                generation=generation,
-                frame_sequence=frame_sequence,
-                observed_at=observed_at,
-                observations=observations,
-                frame=frame,
-                source_mode=source_mode,
-                submitted_monotonic=self._clock(),
+            previous = self._last_submitted.get(camera_id)
+            reserved = self._clock()
+            self._last_submitted[camera_id] = reserved
+
+        accepted = False
+        try:
+            # Exactly one intentional frame copy, for an admitted frame only.
+            frame = copy_frame()
+            accepted = self.submit(
+                PoseJob(
+                    camera_id=camera_id,
+                    generation=generation,
+                    frame_sequence=frame_sequence,
+                    observed_at=observed_at,
+                    observations=observations,
+                    frame=frame,
+                    source_mode=source_mode,
+                    submitted_monotonic=self._clock(),
+                )
             )
-        )
+            return accepted
+        finally:
+            if not accepted:
+                self._release_reservation(camera_id, reserved, previous)
+
+    def _release_reservation(
+        self, camera_id: str, reserved: float, previous: Optional[float]
+    ) -> None:
+        """Rolls the cadence reservation back, but only if still ours."""
+        with self._lock:
+            if self._last_submitted.get(camera_id) != reserved:
+                # A newer accepted submission (or a reset) already replaced it.
+                return
+            if previous is None:
+                self._last_submitted.pop(camera_id, None)
+            else:
+                self._last_submitted[camera_id] = previous
+
 
     def submit(self, job: PoseJob) -> bool:
         """Stores the job in this camera's single pending slot (newest wins)."""
