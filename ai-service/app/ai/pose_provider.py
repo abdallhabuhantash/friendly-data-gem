@@ -65,8 +65,19 @@ KEYPOINT_VISIBILITY_FLOOR = 0.5
 BOUNDS_TOLERANCE = 1e-9
 
 
+def _safe_reason(stage: str, error: BaseException) -> str:
+    """Failure reason built ONLY from the stage and the exception class name.
+
+    Raw exception text is deliberately discarded: model-load errors can embed
+    private filesystem paths and inference errors can embed credential-bearing
+    stream URLs. Neither is ever stored, returned or logged at warning level.
+    """
+    return f"{stage} ({type(error).__name__})"
+
+
 class PoseProviderConfigError(ValueError):
     """Raised for provider configuration/programming errors (never degraded)."""
+
 
 
 class PoseProvider(Protocol):
@@ -347,8 +358,14 @@ class UltralyticsPoseProvider:
             self._model = factory(self.model_name)
         except Exception as error:  # noqa: BLE001 - degradation, not a crash
             self._load_failed = True
-            self._load_error = str(error)
-            logger.warning("Pose model %s unavailable: %s", self._safe_model_label, error)
+            self._load_error = _safe_reason("pose model unavailable", error)
+            # Only the exception CLASS is logged: messages may embed private
+            # filesystem paths or credentials.
+            logger.warning(
+                "Pose model %s unavailable (%s)",
+                self._safe_model_label,
+                type(error).__name__,
+            )
             return None
         return self._model
 
@@ -372,9 +389,14 @@ class UltralyticsPoseProvider:
                     verbose=False,
                 )
             except Exception as error:  # noqa: BLE001 - degradation, not a crash
-                logger.warning("Pose inference failed on %s: %s", label, error)
+                # Never log the raw message: it can carry RTSP credentials.
+                logger.warning(
+                    "Pose inference failed on %s (%s)", label, type(error).__name__
+                )
                 return PoseFrameResult.failure(
-                    PoseStatus.INFERENCE_FAILED, str(error), label
+                    PoseStatus.INFERENCE_FAILED,
+                    _safe_reason("pose inference failed", error),
+                    label,
                 )
 
         rows = _rows(results)
