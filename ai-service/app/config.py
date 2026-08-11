@@ -56,6 +56,25 @@ class Settings(BaseSettings):
     association_margin: float = 0.12
     detection_gap_tolerance_seconds: float = 0.5
 
+    # --- Pose (optional capability, OFF by default) ---
+    # Nothing pose-related is constructed, loaded or copied while disabled.
+    pose_enabled: bool = False
+    pose_model: str = ""
+    pose_device: str = "cpu"
+    pose_imgsz: int = 640
+    pose_confidence: float = 0.25
+    # Explicit pose cadence: never derived from capture FPS and never from
+    # PROCESS_EVERY_N_FRAMES (Task 1 keeps its own frame policy). Not calibrated.
+    pose_max_fps: float = 1.0
+    # Association thresholds are deliberately UNSET by default: no deployment
+    # calibration exists, so pose association stays unconfigured until an
+    # operator supplies all four values.
+    pose_assoc_min_bbox_iou: Optional[float] = None
+    pose_assoc_min_pose_containment: Optional[float] = None
+    pose_assoc_min_available_keypoints: Optional[int] = None
+    pose_assoc_min_keypoint_inside_ratio: Optional[float] = None
+
+
     # --- Demo sources ---
     demo_video_path: str = ""
     demo_video_paths_json: str = ""
