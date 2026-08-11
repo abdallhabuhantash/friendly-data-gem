@@ -148,6 +148,9 @@ class Harness:
         self.stream_hub.publish(camera.id, b"jpeg")
         self.trace.append(f"process-exit:{camera.id}")
 
+    def _inference_loop(self, camera_id):
+        self._stop.wait(0.01)
+
     def _reset_traced(self, camera_id):
         self.trace.append(f"reset:{camera_id}")
         return Orchestrator._reset_camera_runtime(self, camera_id)
@@ -266,6 +269,9 @@ def build_detector() -> tuple[YoloDetector, threading.Event, threading.Event]:
     def track(**kwargs):
         entered.set()
         assert release.wait(TIMEOUT)
+        # Mimics Ultralytics rebuilding tracker state for an unseen source.
+        predictor.trackers = ["tracker-obj"]
+        predictor.vid_path = ["path"]
         return []
 
     detector._model = SimpleNamespace(track=track, predictor=predictor)
