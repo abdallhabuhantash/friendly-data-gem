@@ -378,9 +378,14 @@ class UltralyticsPoseProvider:
                     verbose=False,
                 )
             except Exception as error:  # noqa: BLE001 - degradation, not a crash
-                logger.warning("Pose inference failed on %s: %s", label, error)
+                # Never log the raw message: it can carry RTSP credentials.
+                logger.warning(
+                    "Pose inference failed on %s (%s)", label, type(error).__name__
+                )
                 return PoseFrameResult.failure(
-                    PoseStatus.INFERENCE_FAILED, str(error), label
+                    PoseStatus.INFERENCE_FAILED,
+                    _safe_reason("pose inference failed", error),
+                    label,
                 )
 
         rows = _rows(results)
