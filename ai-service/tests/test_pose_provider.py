@@ -486,8 +486,8 @@ def test_q_inference_exception_is_reported_cleanly():
         "fake-pose.pt", model_factory=lambda _: FakeModel(error=RuntimeError("cuda oom"))
     )
     result = provider.infer(object())
-    assert result.status is PoseStatus.INFERENCE_FAILED
-    assert "cuda oom" in (result.reason or "")
+    assert result.reason == "pose inference failed (RuntimeError)"
+    assert "cuda oom" not in (result.reason or "")
     assert result.instances == ()
 
 
