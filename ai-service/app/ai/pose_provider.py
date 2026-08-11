@@ -295,8 +295,8 @@ class UltralyticsPoseProvider:
     * A load failure is STICKY for the instance: the provider stays
       ``available=False`` until future runtime configuration management
       reconstructs it. No retry policy is implemented here.
-    * Error reasons carry only the model file name and the error text — never
-      full credential-bearing paths, tokens or URLs.
+    * Failure reasons carry only the model file name and the exception CLASS
+      name — never raw exception text, credential-bearing paths, tokens or URLs.
     """
 
     def __init__(
