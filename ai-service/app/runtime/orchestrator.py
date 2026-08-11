@@ -383,9 +383,40 @@ class Orchestrator:
             if every > 1 and count % every:
                 return False
 
-            self._process_frame(runtime.config, frame, frame_sequence=sequence)
+            observations = self._process_frame(
+                runtime.config, frame, frame_sequence=sequence
+            )
             self._record_inference_fps(camera_id)
-            return True
+
+        # Pose submission happens AFTER the camera lifecycle lock is released and
+        # never runs pose inference here: at most a cadence check, one frame copy
+        # and a pending-slot replacement. Task 1 has already completed above.
+        self._submit_pose(runtime, frame, sequence, observations)
+        return True
+
+    def _submit_pose(self, runtime, frame, sequence, observations) -> None:  # noqa: ANN001
+        """Cheap, non-blocking hand-off of one frame to the pose worker."""
+        pose = self.pose
+        if pose is None or observations is None:
+            return
+        try:
+            pose.maybe_submit(
+                camera_id=runtime.camera_id,
+                generation=runtime.generation,
+                frame_sequence=sequence,
+                observed_at=observations.observed_at,
+                observations=observations,
+                # Copy happens only for a frame the cadence actually admits.
+                copy_frame=lambda: frame.copy() if hasattr(frame, "copy") else frame,
+                source_mode=observations.source_mode,
+            )
+        except Exception as error:  # noqa: BLE001 - pose must never break Task 1
+            logger.warning(
+                "Pose submission skipped for camera %s (%s)",
+                runtime.camera_id,
+                type(error).__name__,
+            )
+
 
     def _record_inference_fps(self, camera_id: str) -> None:
         """Per-camera FPS window; belongs to the current incarnation only."""
