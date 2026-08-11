@@ -107,7 +107,7 @@ def test_spec_validation_errors():
     with pytest.raises(RegionConfigError):
         PersonRegionSpec(lower_start_fraction=0.8, lower_end_fraction=0.5)
     with pytest.raises(RegionConfigError):
-        PersonRegionSpec(left_fraction=0.6, right_fraction=0.6)
+        PersonRegionSpec(lower_start_fraction=0.2, left_fraction=0.6, right_fraction=0.6)
     with pytest.raises(RegionConfigError):
         PersonRegionSpec(lower_start_fraction=float("nan"))
 
