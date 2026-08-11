@@ -150,8 +150,16 @@ class YoloDetector:
         return sorted(self._classes)
 
     def reset_camera(self, camera_id: str) -> None:
-        """Drops tracker state for ONE camera only (e.g. on config change)."""
-        self._trackers.reset(camera_id)
+        """Drops tracker state for ONE camera only (e.g. on config change).
+
+        Serialised behind the SAME lock `detect()` uses, so a reset can never
+        run between an in-flight `track()` call and its state capture: once this
+        returns, the camera's tracker state is definitively gone and no in-flight
+        detect call can reinsert it.
+        """
+        with self._lock:
+            self._trackers.reset(camera_id)
+
 
     def detect(self, frame, camera_id: str, min_confidence: float = 0.20) -> FrameDetections:
         """Runs tracked inference on one BGR frame and returns typed detections."""
