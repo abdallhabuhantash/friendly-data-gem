@@ -244,6 +244,8 @@ class PoseRuntime:
             self._discard_locked(camera_id)
             self._generations.pop(camera_id, None)
             self._metrics.pop(camera_id, None)
+            self._stale_by_camera.pop(camera_id, None)
+
             if camera_id in self._order:
                 index = self._order.index(camera_id)
                 self._order.remove(camera_id)
