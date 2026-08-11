@@ -493,9 +493,12 @@ def test_no_runtime_module_imports_the_matcher():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app"
+    # The optional pose runtime is the ONE allowed consumer: it schedules pose
+    # work off the Task 1 frame path and stays inert unless pose is enabled.
+    allowed = {"pose_person_matcher.py", "pose_association.py", "pose_runtime.py"}
     offenders = []
     for path in root.rglob("*.py"):
-        if path.name in {"pose_person_matcher.py", "pose_association.py"}:
+        if path.name in allowed:
             continue
         text = path.read_text(encoding="utf-8")
         if "pose_person_matcher" in text or "pose_association" in text:

@@ -236,8 +236,9 @@ class Orchestrator:
                     self._seen_generation.pop(camera_id, None)
                 # Removal never waits for an in-flight pose inference: the pose
                 # worker discards its result because the camera is deactivated.
-                if self.pose:
-                    self.pose.deactivate(camera_id)
+                pose = getattr(self, "pose", None)
+                if pose:
+                    pose.deactivate(camera_id)
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
@@ -272,8 +273,9 @@ class Orchestrator:
             self._seen_generation[camera_id] = generation
         # Activation happens after the old incarnation's pose state is gone, so
         # a late generation-N pose result can never be stored as generation N+1.
-        if self.pose:
-            self.pose.activate(camera_id, generation)
+        pose = getattr(self, "pose", None)
+        if pose:
+            pose.activate(camera_id, generation)
         return generation
 
     def _reset_camera_runtime(self, camera_id: str) -> None:
@@ -293,10 +295,11 @@ class Orchestrator:
         self._frame_gate.reset(camera_id)
         if self.detector:
             self.detector.reset_camera(camera_id)
-        if self.pose:
+        pose = getattr(self, "pose", None)
+        if pose:
             # Pending job, latest result, cadence timestamps and incarnation
             # metrics all belong to the incarnation being dropped.
-            self.pose.reset_camera(camera_id)
+            pose.reset_camera(camera_id)
 
 
 
@@ -393,7 +396,8 @@ class Orchestrator:
         # Pose submission happens AFTER the camera lifecycle lock is released and
         # never runs pose inference here: at most a cadence check, one frame copy
         # and a pending-slot replacement. Task 1 has already completed above.
-        self._submit_pose(runtime, frame, sequence, observations)
+        if getattr(self, "pose", None) is not None:
+            self._submit_pose(runtime, frame, sequence, observations)
         return True
 
     def _submit_pose(self, runtime, frame, sequence, observations) -> None:  # noqa: ANN001
