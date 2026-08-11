@@ -74,10 +74,10 @@ def is_valid_person_observation(person: object) -> bool:
         return False
     if not _unit(person.confidence):
         return False
-    if person.person_tracking_id is not None and not isinstance(
-        person.person_tracking_id, str
-    ):
-        return False
+    track = person.person_tracking_id
+    if track is not None:
+        if not isinstance(track, str) or not track.strip():
+            return False
     return True
 
 
@@ -207,6 +207,7 @@ def associate_pose_frame(
         )
 
     provisional: dict[int, PosePersonPairFacts] = {}
+    pose_facts: dict[int, tuple[PosePersonPairFacts, ...]] = {}
     resolved: dict[int, PoseMatch] = {}
 
     for pose_index, pose in enumerate(pose_result.instances):
@@ -229,6 +230,7 @@ def associate_pose_frame(
             )
             for person_index, person in enumerate(persons)
         )
+        pose_facts[pose_index] = facts
         eligible = tuple(item for item in facts if item.eligible)
         if not eligible:
             resolved[pose_index] = PoseMatch(
@@ -276,7 +278,7 @@ def associate_pose_frame(
                     pose_index=pose_index,
                     status=PoseMatchStatus.AMBIGUOUS,
                     reason="multiple_pose_instances_compete_for_person",
-                    candidates=(winner,),
+                    candidates=pose_facts.get(pose_index, (winner,)),
                 )
             else:
                 resolved[pose_index] = PoseMatch(
@@ -284,7 +286,7 @@ def associate_pose_frame(
                     status=PoseMatchStatus.ASSOCIATED,
                     person_tracking_id=winner.person_tracking_id,
                     person_index=person_index,
-                    candidates=(winner,),
+                    candidates=pose_facts.get(pose_index, (winner,)),
                 )
 
     matches = tuple(resolved[index] for index in sorted(resolved))
