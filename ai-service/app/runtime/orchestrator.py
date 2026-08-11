@@ -27,6 +27,8 @@ from ..domain.models import (
     RuleConfig,
     SystemConfig,
 )
+from ..domain.observations import FrameObservations
+
 
 from ..events.snapshot_service import SnapshotService, annotate_frame, encode_jpeg
 from ..events.event_publisher import EventPublisher
