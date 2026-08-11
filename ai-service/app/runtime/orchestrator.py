@@ -41,7 +41,9 @@ from ..notifications.notification_manager import NotificationManager
 from ..notifications.telegram import TelegramProvider
 from .frame_gate import FrameGate
 from .health_reporter import HealthReporter, measure_gpu_load
+from .pose_runtime import PoseRuntime
 from .stream_hub import StreamHub
+
 
 logger = logging.getLogger(__name__)
 
