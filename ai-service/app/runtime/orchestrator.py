@@ -51,8 +51,11 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     """Owns every long-lived resource of the AI service."""
 
-    def __init__(self, settings) -> None:  # noqa: ANN001 - Settings
+    def __init__(self, settings, pose_provider_factory=None) -> None:  # noqa: ANN001 - Settings
         self.settings = settings
+        # Injectable ONLY so tests need no pose weights; production stays lazy.
+        self._pose_provider_factory = pose_provider_factory
+
         self.stream_hub = StreamHub()
         self.repository = SupabaseRepository(
             settings.supabase_url,
