@@ -490,12 +490,24 @@ def test_matcher_module_has_no_region_or_behaviour_imports():
 
 
 def test_no_runtime_module_imports_the_matcher():
+    """Task 1's detection path must never depend on pose association.
+
+    Pose association may only be reachable from the optional pose runtime and
+    from configuration/wiring, never from the phone pipeline itself.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app"
-    # The optional pose runtime is the ONE allowed consumer: it schedules pose
-    # work off the Task 1 frame path and stays inert unless pose is enabled.
-    allowed = {"pose_person_matcher.py", "pose_association.py", "pose_runtime.py"}
+    # Allowed consumers: the association module itself, the optional pose
+    # runtime that schedules it, and the config/orchestrator wiring that stays
+    # inert while pose is disabled.
+    allowed = {
+        "pose_person_matcher.py",
+        "pose_association.py",
+        "pose_runtime.py",
+        "config.py",
+        "orchestrator.py",
+    }
     offenders = []
     for path in root.rglob("*.py"):
         if path.name in allowed:
@@ -504,6 +516,11 @@ def test_no_runtime_module_imports_the_matcher():
         if "pose_person_matcher" in text or "pose_association" in text:
             offenders.append(path.name)
     assert offenders == []
+
+    # The phone pipeline specifically must stay free of any pose reference.
+    for name in ("phone_rule_engine.py", "detector.py", "temporal_state.py", "association.py"):
+        text = (root / "ai" / name).read_text(encoding="utf-8")
+        assert "pose" not in text.lower()
 
 
 def test_epsilon_tolerance_is_finite():
