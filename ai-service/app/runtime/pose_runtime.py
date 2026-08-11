@@ -432,12 +432,16 @@ class PoseRuntime:
         with self._lock:
             if self._generations.get(job.camera_id) != job.generation:
                 # The incarnation ended while pose was running: discard, never
-                # publish a generation-N result as generation-N+1 state.
-                metrics = self._metrics.get(job.camera_id)
-                if metrics is not None:
-                    metrics.dropped_stale += 1
+                # publish a generation-N result as generation-N+1 state, and
+                # never attribute this old work to the NEW incarnation's
+                # per-camera metrics. Stale accounting is kept separately.
+                self._stale_discards += 1
+                self._stale_by_camera[job.camera_id] = (
+                    self._stale_by_camera.get(job.camera_id, 0) + 1
+                )
                 return
             metrics = self._metrics.setdefault(job.camera_id, _CameraMetrics())
+
             self._results[job.camera_id] = result
             metrics.processed += 1
             metrics.last_inference_ms = inference_ms
