@@ -401,7 +401,12 @@ class Orchestrator:
         return True
 
     def _submit_pose(self, runtime, frame, sequence, observations) -> None:  # noqa: ANN001
-        """Cheap, non-blocking hand-off of one frame to the pose worker."""
+        """Cheap, non-blocking hand-off of one frame to the pose worker.
+
+        Frame ownership is strict: the pose job receives an INDEPENDENT image
+        object produced by exactly one ``frame.copy()``. There is no fallback to
+        the original mutable frame — if it cannot be copied, pose is skipped.
+        """
         pose = self.pose
         if pose is None or observations is None:
             return
@@ -413,7 +418,7 @@ class Orchestrator:
                 observed_at=observations.observed_at,
                 observations=observations,
                 # Copy happens only for a frame the cadence actually admits.
-                copy_frame=lambda: frame.copy() if hasattr(frame, "copy") else frame,
+                copy_frame=lambda: _independent_frame_copy(frame),
                 source_mode=observations.source_mode,
             )
         except Exception as error:  # noqa: BLE001 - pose must never break Task 1
@@ -422,6 +427,7 @@ class Orchestrator:
                 runtime.camera_id,
                 type(error).__name__,
             )
+
 
 
     def _record_inference_fps(self, camera_id: str) -> None:
