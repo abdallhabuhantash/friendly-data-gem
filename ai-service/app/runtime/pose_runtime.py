@@ -497,6 +497,13 @@ class PoseRuntime:
                 return None
             return metrics.snapshot(self._generations.get(camera_id))
 
+    def stale_discards(self, camera_id: Optional[str] = None) -> int:
+        """Completions of ENDED incarnations; never part of camera metrics."""
+        with self._lock:
+            if camera_id is None:
+                return self._stale_discards
+            return self._stale_by_camera.get(camera_id, 0)
+
     def status(self) -> dict:
         with self._lock:
             cameras = {
@@ -504,18 +511,24 @@ class PoseRuntime:
                 for camera_id, metrics in self._metrics.items()
             }
             pending = len(self._pending)
+            stale = self._stale_discards
+            stale_by_camera = dict(self._stale_by_camera)
         return {
             "enabled": True,
             "configured": True,
             "worker_running": self.worker_running,
+            "stop_timed_out": self._stop_timed_out,
             "provider_available": bool(getattr(self._provider, "available", False)),
             "model": getattr(self._provider, "model_name", None) and _basename(
                 getattr(self._provider, "model_name")
             ),
             "association_configured": self.association_configured,
             "pending_jobs": pending,
+            "stale_discards": stale,
+            "stale_discards_by_camera": stale_by_camera,
             "cameras": cameras,
         }
+
 
 
 def _basename(value: str) -> str:
