@@ -209,9 +209,13 @@ class Settings(BaseSettings):
         return self.pose_enabled and not self.pose_association_problems
 
     @property
-    def pose_min_interval_seconds(self) -> float:
+    def pose_min_interval_seconds(self) -> Optional[float]:
+        """Cadence interval derived from the EXPLICIT POSE_MAX_FPS, or None."""
+        if self.pose_max_fps is None:
+            return None
         fps = float(self.pose_max_fps)
-        return (1.0 / fps) if fps > 0 else 0.0
+        return (1.0 / fps) if fps > 0 else None
+
 
     def validate_runtime(self) -> list[str]:
         """Returns human-readable configuration problems (never secret values)."""
