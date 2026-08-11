@@ -99,7 +99,13 @@ class Orchestrator:
         self._control: Optional[threading.Thread] = None
         self._inference_fps: dict[str, float] = {}
         self._frame_gate = FrameGate()
+        # Stream-incarnation accounting: the generation each camera's inference
+        # loop has initialised, plus per-incarnation counters.
+        self._seen_generation: dict[str, int] = {}
+        self._processed_frames: dict[str, int] = {}
+        self._fps_window: dict[str, tuple[float, int]] = {}
         self._started_at = time.monotonic()
+
 
     # --- lifecycle --------------------------------------------------------
     def start(self) -> None:
