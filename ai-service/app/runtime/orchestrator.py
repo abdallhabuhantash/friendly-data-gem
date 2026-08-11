@@ -151,14 +151,17 @@ class Orchestrator:
 
         # A same-id source replacement must not inherit runtime state from the
         # previous stream incarnation, so it uses exactly the removal cleanup.
+        # The per-camera lifecycle lock makes the reset wait for any in-flight
+        # frame of that SAME camera to leave its state-mutating section first.
         for camera_id in reconfigured:
-            self._reset_camera_runtime(camera_id)
+            self._transition_generation(camera_id)
 
         for camera_id in list(self._threads):
             if camera_id not in active:
                 self._threads.pop(camera_id, None)
-                self._reset_camera_runtime(camera_id)
-
+                with self.cameras.lock(camera_id):
+                    self._reset_camera_runtime(camera_id)
+                    self._seen_generation.pop(camera_id, None)
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
@@ -173,6 +176,26 @@ class Orchestrator:
             self._threads[camera_id] = thread
             thread.start()
 
+    def _transition_generation(self, camera_id: str) -> Optional[int]:
+        """Moves a camera to its current stream incarnation, exactly once.
+
+        Runs under the camera's own lifecycle lock, so it cannot interleave with
+        that camera's frame processing. Whoever gets there first — the control
+        thread after `sync()` or the inference thread noticing a new generation —
+        performs the reset; the other one sees the generation already recorded
+        and does nothing. Returns the generation now initialised, or None when
+        the camera has no running incarnation.
+        """
+        with self.cameras.lock(camera_id):
+            generation = self.cameras.generation(camera_id)
+            if generation is None:
+                return None
+            if self._seen_generation.get(camera_id) == generation:
+                return generation
+            self._reset_camera_runtime(camera_id)
+            self._seen_generation[camera_id] = generation
+            return generation
+
     def _reset_camera_runtime(self, camera_id: str) -> None:
         """Idempotently drops all runtime state of ONE camera.
 
@@ -180,6 +203,7 @@ class Orchestrator:
         distinct-frame gate, tracker state, published stream frame and the
         inference FPS measurement all belong to a single stream incarnation.
         Never touches any other camera and never stops a capture worker.
+        Callers hold that camera's lifecycle lock.
         """
         self.registry.reset(camera_id)
         self.stream_hub.drop(camera_id)
@@ -187,6 +211,7 @@ class Orchestrator:
         self._frame_gate.reset(camera_id)
         if self.detector:
             self.detector.reset_camera(camera_id)
+
 
     def _rules_for(self, camera: CameraConfig) -> list[RuleConfig]:
 
