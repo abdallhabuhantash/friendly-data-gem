@@ -50,6 +50,24 @@ from .stream_hub import StreamHub
 logger = logging.getLogger(__name__)
 
 
+def _independent_frame_copy(frame):  # noqa: ANN001, ANN201 - opaque frame object
+    """Returns an INDEPENDENT copy of ``frame`` or raises.
+
+    Production frames are NumPy/OpenCV arrays, so ``copy()`` yields a private
+    buffer. Anything that cannot produce a distinct object is refused: the pose
+    worker must never share a mutable frame with the Task 1 capture path.
+    """
+    copy = getattr(frame, "copy", None)
+    if not callable(copy):
+        raise TypeError("frame cannot be copied for pose hand-off")
+    duplicate = copy()
+    if duplicate is None or duplicate is frame:
+        raise TypeError("frame copy is not an independent object")
+    return duplicate
+
+
+
+
 class Orchestrator:
     """Owns every long-lived resource of the AI service."""
 
@@ -177,7 +195,7 @@ class Orchestrator:
                 )
             runtime = PoseRuntime(
                 provider,
-                min_interval_seconds=settings.pose_min_interval_seconds,
+                min_interval_seconds=float(settings.pose_min_interval_seconds or 0.0),
                 association_spec=spec,
             )
             runtime.start()
@@ -401,7 +419,12 @@ class Orchestrator:
         return True
 
     def _submit_pose(self, runtime, frame, sequence, observations) -> None:  # noqa: ANN001
-        """Cheap, non-blocking hand-off of one frame to the pose worker."""
+        """Cheap, non-blocking hand-off of one frame to the pose worker.
+
+        Frame ownership is strict: the pose job receives an INDEPENDENT image
+        object produced by exactly one ``frame.copy()``. There is no fallback to
+        the original mutable frame — if it cannot be copied, pose is skipped.
+        """
         pose = self.pose
         if pose is None or observations is None:
             return
@@ -413,7 +436,7 @@ class Orchestrator:
                 observed_at=observations.observed_at,
                 observations=observations,
                 # Copy happens only for a frame the cadence actually admits.
-                copy_frame=lambda: frame.copy() if hasattr(frame, "copy") else frame,
+                copy_frame=lambda: _independent_frame_copy(frame),
                 source_mode=observations.source_mode,
             )
         except Exception as error:  # noqa: BLE001 - pose must never break Task 1
@@ -422,6 +445,7 @@ class Orchestrator:
                 runtime.camera_id,
                 type(error).__name__,
             )
+
 
 
     def _record_inference_fps(self, camera_id: str) -> None:

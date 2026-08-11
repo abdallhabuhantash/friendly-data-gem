@@ -7,7 +7,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -58,14 +60,17 @@ class Settings(BaseSettings):
 
     # --- Pose (optional capability, OFF by default) ---
     # Nothing pose-related is constructed, loaded or copied while disabled.
+    # When POSE_ENABLED=true every field below must be supplied EXPLICITLY:
+    # there is no calibrated deployment default for a model, a device, an input
+    # size, a confidence floor or a cadence, so none is invented here.
     pose_enabled: bool = False
     pose_model: str = ""
-    pose_device: str = "cpu"
-    pose_imgsz: int = 640
-    pose_confidence: float = 0.25
+    pose_device: Optional[str] = None
+    pose_imgsz: Optional[int] = None
+    pose_confidence: Optional[float] = None
     # Explicit pose cadence: never derived from capture FPS and never from
     # PROCESS_EVERY_N_FRAMES (Task 1 keeps its own frame policy). Not calibrated.
-    pose_max_fps: float = 1.0
+    pose_max_fps: Optional[float] = None
     # Association thresholds are deliberately UNSET by default: no deployment
     # calibration exists, so pose association stays unconfigured until an
     # operator supplies all four values.
@@ -73,6 +78,27 @@ class Settings(BaseSettings):
     pose_assoc_min_pose_containment: Optional[float] = None
     pose_assoc_min_available_keypoints: Optional[int] = None
     pose_assoc_min_keypoint_inside_ratio: Optional[float] = None
+
+    @field_validator(
+        "pose_device",
+        "pose_imgsz",
+        "pose_confidence",
+        "pose_max_fps",
+        "pose_assoc_min_bbox_iou",
+        "pose_assoc_min_pose_containment",
+        "pose_assoc_min_available_keypoints",
+        "pose_assoc_min_keypoint_inside_ratio",
+        mode="before",
+    )
+    @classmethod
+    def _blank_pose_value_is_unset(cls, value):  # noqa: ANN001, ANN206
+        """An empty/blank env entry means UNSET, never an invented default."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+
 
 
     # --- Demo sources ---
@@ -132,21 +158,40 @@ class Settings(BaseSettings):
     # --- Pose configuration truthfulness ---------------------------------
     @property
     def pose_inference_problems(self) -> list[str]:
-        """Pose inference configuration problems; empty means usable."""
+        """Pose inference configuration problems; empty means usable.
+
+        Enabling pose requires EXPLICIT values: a missing setting is reported as
+        a problem instead of being replaced by an invented deployment default.
+        """
         problems: list[str] = []
         if not self.pose_enabled:
             return problems
-        if not str(self.pose_model).strip():
-            problems.append("POSE_ENABLED=true but POSE_MODEL is not set")
-        if not str(self.pose_device).strip():
-            problems.append("POSE_DEVICE must be a non-empty string")
-        if int(self.pose_imgsz) <= 0:
+        missing: list[str] = []
+        if not str(self.pose_model or "").strip():
+            missing.append("POSE_MODEL")
+        if self.pose_device is None or not str(self.pose_device).strip():
+            missing.append("POSE_DEVICE")
+        if self.pose_imgsz is None:
+            missing.append("POSE_IMGSZ")
+        if self.pose_confidence is None:
+            missing.append("POSE_CONFIDENCE")
+        if self.pose_max_fps is None:
+            missing.append("POSE_MAX_FPS")
+        if missing:
+            problems.append(
+                "POSE_ENABLED=true but required pose settings are not set: "
+                + ", ".join(sorted(missing))
+                + " (no default is assumed; pose inference stays unconfigured)"
+            )
+            return problems
+        if int(self.pose_imgsz) <= 0:  # type: ignore[arg-type]
             problems.append("POSE_IMGSZ must be a positive integer")
-        if not 0.0 <= float(self.pose_confidence) <= 1.0:
+        if not 0.0 <= float(self.pose_confidence) <= 1.0:  # type: ignore[arg-type]
             problems.append("POSE_CONFIDENCE must be within 0..1")
-        if float(self.pose_max_fps) <= 0.0:
+        if float(self.pose_max_fps) <= 0.0:  # type: ignore[arg-type]
             problems.append("POSE_MAX_FPS must be greater than 0")
         return problems
+
 
     @property
     def pose_association_problems(self) -> list[str]:
@@ -186,9 +231,13 @@ class Settings(BaseSettings):
         return self.pose_enabled and not self.pose_association_problems
 
     @property
-    def pose_min_interval_seconds(self) -> float:
+    def pose_min_interval_seconds(self) -> Optional[float]:
+        """Cadence interval derived from the EXPLICIT POSE_MAX_FPS, or None."""
+        if self.pose_max_fps is None:
+            return None
         fps = float(self.pose_max_fps)
-        return (1.0 / fps) if fps > 0 else 0.0
+        return (1.0 / fps) if fps > 0 else None
+
 
     def validate_runtime(self) -> list[str]:
         """Returns human-readable configuration problems (never secret values)."""

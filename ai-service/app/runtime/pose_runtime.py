@@ -86,12 +86,15 @@ class PoseRuntimeResult:
 
 @dataclass
 class _CameraMetrics:
-    """Measured per-camera diagnostics. Never estimated, never model accuracy."""
+    """Measured per-camera diagnostics for ONE camera incarnation.
+
+    Nothing produced by an ended incarnation is ever counted here: stale
+    completions are accounted separately by the runtime.
+    """
 
     submitted: int = 0
     processed: int = 0
     replaced_pending: int = 0
-    dropped_stale: int = 0
     cadence_skipped: int = 0
     provider_failures: int = 0
     association_degraded: int = 0
@@ -109,7 +112,6 @@ class _CameraMetrics:
             "submitted": self.submitted,
             "processed": self.processed,
             "replaced_pending": self.replaced_pending,
-            "dropped_stale": self.dropped_stale,
             "cadence_skipped": self.cadence_skipped,
             "provider_failures": self.provider_failures,
             "association_degraded": self.association_degraded,
@@ -125,6 +127,7 @@ class _CameraMetrics:
                 round(self.measured_pose_fps, 2) if self.measured_pose_fps is not None else None
             ),
         }
+
 
 
 class PoseRuntime:
@@ -149,6 +152,8 @@ class PoseRuntime:
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
+        #: Guards worker thread creation/teardown only (never held over inference).
+        self._thread_lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._generations: dict[str, int] = {}
         self._order: list[str] = []
@@ -157,6 +162,11 @@ class PoseRuntime:
         self._results: dict[str, PoseRuntimeResult] = {}
         self._last_submitted: dict[str, float] = {}
         self._metrics: dict[str, _CameraMetrics] = {}
+        #: Completions of ended incarnations, kept OUT of per-camera metrics.
+        self._stale_discards: int = 0
+        self._stale_by_camera: dict[str, int] = {}
+
+        self._stop_timed_out: bool = False
 
     # --- lifecycle --------------------------------------------------------
     @property
@@ -165,23 +175,62 @@ class PoseRuntime:
 
     @property
     def worker_running(self) -> bool:
-        thread = self._thread
-        return bool(thread and thread.is_alive())
+        """True while a worker thread for THIS instance is genuinely alive."""
+        with self._thread_lock:
+            thread = self._thread
+            if thread is None:
+                return False
+            if thread.is_alive():
+                return True
+            # The worker finished: forget the dead handle so start() may run again.
+            self._thread = None
+            return False
 
     def start(self) -> None:
-        if self.worker_running:
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._worker_loop, name="pose", daemon=True)
-        self._thread.start()
+        """Duplicate-safe: at most ONE live worker thread per instance."""
+        with self._thread_lock:
+            thread = self._thread
+            if thread is not None:
+                if thread.is_alive():
+                    # A previous worker is still alive (possibly blocked inside a
+                    # provider call after a timed-out stop). Never start a second.
+                    return
+                self._thread = None
+            self._stop.clear()
+            self._stop_timed_out = False
+            worker = threading.Thread(target=self._worker_loop, name="pose", daemon=True)
+            self._thread = worker
+            worker.start()
 
     def stop(self, timeout: float = 3.0) -> None:
+        """Signals shutdown and joins with a bound; never lies about liveness."""
         self._stop.set()
         self._wake.set()
-        thread = self._thread
-        if thread:
-            thread.join(timeout=timeout)
-        self._thread = None
+        with self._thread_lock:
+            thread = self._thread
+            if thread is None:
+                # Nothing alive: any earlier timeout condition is resolved.
+                self._stop_timed_out = False
+        if thread is None:
+            return
+
+        thread.join(timeout=timeout)
+        with self._thread_lock:
+            if thread.is_alive():
+                # Truthful: the worker is still inside a provider call. It will
+                # observe the stop flag and exit once that call returns; the
+                # handle stays so start() cannot create a second worker.
+                self._stop_timed_out = True
+                logger.warning(
+                    "Pose worker still running after stop timeout of %.1fs "
+                    "(shutdown signalled; no second worker will be started)",
+                    timeout,
+                )
+                return
+            self._stop_timed_out = False
+            if self._thread is thread:
+                self._thread = None
+
 
     def activate(self, camera_id: str, generation: int) -> None:
         """Marks one camera incarnation as the only one allowed to store state."""
@@ -199,6 +248,8 @@ class PoseRuntime:
             self._discard_locked(camera_id)
             self._generations.pop(camera_id, None)
             self._metrics.pop(camera_id, None)
+            self._stale_by_camera.pop(camera_id, None)
+
             if camera_id in self._order:
                 index = self._order.index(camera_id)
                 self._order.remove(camera_id)
@@ -243,28 +294,56 @@ class PoseRuntime:
         copy_frame: Callable[[], Any],
         source_mode: Optional[str] = None,
     ) -> bool:
-        """Cadence-gated submission. Copies the frame ONLY when admitted."""
+        """Cadence-gated submission. Copies the frame ONLY when admitted.
+
+        Cadence accounting is *reserved* around the copy and rolled back when no
+        job is actually accepted, so a failed copy or an ended incarnation never
+        consumes the camera's next pose cadence slot.
+        """
         with self._lock:
             if not self._cadence_admits_locked(camera_id, generation):
                 metrics = self._metrics.get(camera_id)
                 if metrics is not None:
                     metrics.cadence_skipped += 1
                 return False
-            self._last_submitted[camera_id] = self._clock()
-        # Exactly one intentional frame copy, for an admitted frame only.
-        frame = copy_frame()
-        return self.submit(
-            PoseJob(
-                camera_id=camera_id,
-                generation=generation,
-                frame_sequence=frame_sequence,
-                observed_at=observed_at,
-                observations=observations,
-                frame=frame,
-                source_mode=source_mode,
-                submitted_monotonic=self._clock(),
+            previous = self._last_submitted.get(camera_id)
+            reserved = self._clock()
+            self._last_submitted[camera_id] = reserved
+
+        accepted = False
+        try:
+            # Exactly one intentional frame copy, for an admitted frame only.
+            frame = copy_frame()
+            accepted = self.submit(
+                PoseJob(
+                    camera_id=camera_id,
+                    generation=generation,
+                    frame_sequence=frame_sequence,
+                    observed_at=observed_at,
+                    observations=observations,
+                    frame=frame,
+                    source_mode=source_mode,
+                    submitted_monotonic=self._clock(),
+                )
             )
-        )
+            return accepted
+        finally:
+            if not accepted:
+                self._release_reservation(camera_id, reserved, previous)
+
+    def _release_reservation(
+        self, camera_id: str, reserved: float, previous: Optional[float]
+    ) -> None:
+        """Rolls the cadence reservation back, but only if still ours."""
+        with self._lock:
+            if self._last_submitted.get(camera_id) != reserved:
+                # A newer accepted submission (or a reset) already replaced it.
+                return
+            if previous is None:
+                self._last_submitted.pop(camera_id, None)
+            else:
+                self._last_submitted[camera_id] = previous
+
 
     def submit(self, job: PoseJob) -> bool:
         """Stores the job in this camera's single pending slot (newest wins)."""
@@ -364,12 +443,16 @@ class PoseRuntime:
         with self._lock:
             if self._generations.get(job.camera_id) != job.generation:
                 # The incarnation ended while pose was running: discard, never
-                # publish a generation-N result as generation-N+1 state.
-                metrics = self._metrics.get(job.camera_id)
-                if metrics is not None:
-                    metrics.dropped_stale += 1
+                # publish a generation-N result as generation-N+1 state, and
+                # never attribute this old work to the NEW incarnation's
+                # per-camera metrics. Stale accounting is kept separately.
+                self._stale_discards += 1
+                self._stale_by_camera[job.camera_id] = (
+                    self._stale_by_camera.get(job.camera_id, 0) + 1
+                )
                 return
             metrics = self._metrics.setdefault(job.camera_id, _CameraMetrics())
+
             self._results[job.camera_id] = result
             metrics.processed += 1
             metrics.last_inference_ms = inference_ms
@@ -420,6 +503,13 @@ class PoseRuntime:
                 return None
             return metrics.snapshot(self._generations.get(camera_id))
 
+    def stale_discards(self, camera_id: Optional[str] = None) -> int:
+        """Completions of ENDED incarnations; never part of camera metrics."""
+        with self._lock:
+            if camera_id is None:
+                return self._stale_discards
+            return self._stale_by_camera.get(camera_id, 0)
+
     def status(self) -> dict:
         with self._lock:
             cameras = {
@@ -427,18 +517,24 @@ class PoseRuntime:
                 for camera_id, metrics in self._metrics.items()
             }
             pending = len(self._pending)
+            stale = self._stale_discards
+            stale_by_camera = dict(self._stale_by_camera)
         return {
             "enabled": True,
             "configured": True,
             "worker_running": self.worker_running,
+            "stop_timed_out": self._stop_timed_out,
             "provider_available": bool(getattr(self._provider, "available", False)),
             "model": getattr(self._provider, "model_name", None) and _basename(
                 getattr(self._provider, "model_name")
             ),
             "association_configured": self.association_configured,
             "pending_jobs": pending,
+            "stale_discards": stale,
+            "stale_discards_by_camera": stale_by_camera,
             "cameras": cameras,
         }
+
 
 
 def _basename(value: str) -> str:
