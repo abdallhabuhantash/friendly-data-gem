@@ -508,6 +508,8 @@ class Orchestrator:
             self.publisher.publish(
                 draft.event, frame=annotated, save_snapshot=draft.save_snapshot
             )
+        return observations
+
 
 
     # --- control loop -----------------------------------------------------
