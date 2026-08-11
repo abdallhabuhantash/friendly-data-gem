@@ -232,6 +232,10 @@ class Orchestrator:
                 with self.cameras.lock(camera_id):
                     self._reset_camera_runtime(camera_id)
                     self._seen_generation.pop(camera_id, None)
+                # Removal never waits for an in-flight pose inference: the pose
+                # worker discards its result because the camera is deactivated.
+                if self.pose:
+                    self.pose.deactivate(camera_id)
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
@@ -264,7 +268,11 @@ class Orchestrator:
                 return generation
             self._reset_camera_runtime(camera_id)
             self._seen_generation[camera_id] = generation
-            return generation
+        # Activation happens after the old incarnation's pose state is gone, so
+        # a late generation-N pose result can never be stored as generation N+1.
+        if self.pose:
+            self.pose.activate(camera_id, generation)
+        return generation
 
     def _reset_camera_runtime(self, camera_id: str) -> None:
         """Idempotently drops all runtime state of ONE camera.
@@ -283,6 +291,11 @@ class Orchestrator:
         self._frame_gate.reset(camera_id)
         if self.detector:
             self.detector.reset_camera(camera_id)
+        if self.pose:
+            # Pending job, latest result, cadence timestamps and incarnation
+            # metrics all belong to the incarnation being dropped.
+            self.pose.reset_camera(camera_id)
+
 
 
 
