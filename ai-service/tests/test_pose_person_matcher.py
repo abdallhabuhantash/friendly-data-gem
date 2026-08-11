@@ -507,3 +507,111 @@ def test_epsilon_tolerance_is_finite():
     from app.ai.pose_person_matcher import METRIC_EPSILON
 
     assert math.isfinite(METRIC_EPSILON) and METRIC_EPSILON > 0
+
+
+# ------------------------------------- hardening: blank tracking identities
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "\t", "\n", " \t "])
+def test_blank_tracking_id_is_invalid_observation(bad):
+    assert is_valid_person_observation(person(BOX_A, bad)) is False
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, bad)),
+        spec=SPEC,
+    )
+    assert result.status is PoseAssociationFrameStatus.INVALID_PERSON_OBSERVATIONS
+    assert result.matches == ()
+
+
+def test_blank_tracking_id_rejects_whole_frame_even_with_valid_person():
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, "11"), person(BOX_B, "  ")),
+        spec=SPEC,
+    )
+    assert result.status is PoseAssociationFrameStatus.INVALID_PERSON_OBSERVATIONS
+    assert result.matches == ()
+
+
+def test_none_and_normal_tracking_ids_remain_valid():
+    assert is_valid_person_observation(person(BOX_A, None)) is True
+    assert is_valid_person_observation(person(BOX_A, "11")) is True
+
+
+def test_padded_tracking_id_is_not_normalised():
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, " 11 ")),
+        spec=SPEC,
+    )
+    assert result.matches[0].person_tracking_id == " 11 "
+
+
+# ------------------------------------------- hardening: facts preservation
+
+
+def _tracks(match: PoseMatch) -> set[str | None]:
+    return {c.person_tracking_id for c in match.candidates}
+
+
+def test_associated_match_keeps_all_evaluated_candidates():
+    # Person 11 encloses the pose; person 24 is a poorer overlapping candidate.
+    near = BBox(0.10, 0.10, 0.24, 0.44)
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, "11"), person(near, "24")),
+        spec=SPEC,
+    )
+    match = result.matches[0]
+    assert match.status is PoseMatchStatus.ASSOCIATED
+    assert match.person_tracking_id == "11"
+    assert _tracks(match) == {"11", "24"}
+    rejected = [c for c in match.candidates if c.person_tracking_id == "24"][0]
+    assert math.isfinite(rejected.bbox_iou)
+    assert math.isfinite(rejected.pose_bbox_containment_in_person)
+    assert math.isfinite(rejected.keypoint_inside_person_ratio)
+    assert isinstance(rejected.eligible, bool)
+
+
+def test_global_collision_keeps_full_candidate_facts_per_pose():
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A), pose_in(BOX_A)),
+        observations=frame(person(BOX_A, "11"), person(BOX_B, "24")),
+        spec=SPEC,
+    )
+    assert len(result.matches) == 2
+    for match in result.matches:
+        assert match.status is PoseMatchStatus.AMBIGUOUS
+        assert match.person_tracking_id is None
+        assert _tracks(match) == {"11", "24"}
+
+
+def test_candidate_preservation_does_not_change_winner():
+    near = BBox(0.10, 0.10, 0.24, 0.44)
+    result = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, "11"), person(near, "24")),
+        spec=SPEC,
+    )
+    assert result.matches[0].person_tracking_id == "11"
+    assert len(result.matches[0].candidates) == 2
+
+
+def test_reversed_person_order_keeps_same_winning_identity_and_facts():
+    near = BBox(0.10, 0.10, 0.24, 0.44)
+    forward = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(BOX_A, "11"), person(near, "24")),
+        spec=SPEC,
+    ).matches[0]
+    reverse = associate_pose_frame(
+        pose_result=ok_pose(pose_in(BOX_A)),
+        observations=frame(person(near, "24"), person(BOX_A, "11")),
+        spec=SPEC,
+    ).matches[0]
+    assert forward.person_tracking_id == reverse.person_tracking_id == "11"
+    assert _tracks(forward) == _tracks(reverse) == {"11", "24"}
+    by_track = {c.person_tracking_id: c for c in reverse.candidates}
+    assert by_track["11"].person_index == 1
+    assert by_track["24"].person_index == 0
