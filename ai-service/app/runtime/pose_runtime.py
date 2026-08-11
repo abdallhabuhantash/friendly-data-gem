@@ -149,6 +149,8 @@ class PoseRuntime:
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
+        #: Guards worker thread creation/teardown only (never held over inference).
+        self._thread_lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._generations: dict[str, int] = {}
         self._order: list[str] = []
@@ -157,6 +159,9 @@ class PoseRuntime:
         self._results: dict[str, PoseRuntimeResult] = {}
         self._last_submitted: dict[str, float] = {}
         self._metrics: dict[str, _CameraMetrics] = {}
+        #: Completions of ended incarnations, kept OUT of per-camera metrics.
+        self._stale_discards: int = 0
+        self._stop_timed_out: bool = False
 
     # --- lifecycle --------------------------------------------------------
     @property
@@ -165,23 +170,58 @@ class PoseRuntime:
 
     @property
     def worker_running(self) -> bool:
-        thread = self._thread
-        return bool(thread and thread.is_alive())
+        """True while a worker thread for THIS instance is genuinely alive."""
+        with self._thread_lock:
+            thread = self._thread
+            if thread is None:
+                return False
+            if thread.is_alive():
+                return True
+            # The worker finished: forget the dead handle so start() may run again.
+            self._thread = None
+            return False
 
     def start(self) -> None:
-        if self.worker_running:
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._worker_loop, name="pose", daemon=True)
-        self._thread.start()
+        """Duplicate-safe: at most ONE live worker thread per instance."""
+        with self._thread_lock:
+            thread = self._thread
+            if thread is not None:
+                if thread.is_alive():
+                    # A previous worker is still alive (possibly blocked inside a
+                    # provider call after a timed-out stop). Never start a second.
+                    return
+                self._thread = None
+            self._stop.clear()
+            self._stop_timed_out = False
+            worker = threading.Thread(target=self._worker_loop, name="pose", daemon=True)
+            self._thread = worker
+            worker.start()
 
     def stop(self, timeout: float = 3.0) -> None:
+        """Signals shutdown and joins with a bound; never lies about liveness."""
         self._stop.set()
         self._wake.set()
-        thread = self._thread
-        if thread:
-            thread.join(timeout=timeout)
-        self._thread = None
+        with self._thread_lock:
+            thread = self._thread
+        if thread is None:
+            return
+        thread.join(timeout=timeout)
+        with self._thread_lock:
+            if thread.is_alive():
+                # Truthful: the worker is still inside a provider call. It will
+                # observe the stop flag and exit once that call returns; the
+                # handle stays so start() cannot create a second worker.
+                self._stop_timed_out = True
+                logger.warning(
+                    "Pose worker still running after stop timeout of %.1fs "
+                    "(shutdown signalled; no second worker will be started)",
+                    timeout,
+                )
+                return
+            self._stop_timed_out = False
+            if self._thread is thread:
+                self._thread = None
+
 
     def activate(self, camera_id: str, generation: int) -> None:
         """Marks one camera incarnation as the only one allowed to store state."""
