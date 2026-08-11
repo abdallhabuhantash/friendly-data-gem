@@ -136,21 +136,40 @@ class Settings(BaseSettings):
     # --- Pose configuration truthfulness ---------------------------------
     @property
     def pose_inference_problems(self) -> list[str]:
-        """Pose inference configuration problems; empty means usable."""
+        """Pose inference configuration problems; empty means usable.
+
+        Enabling pose requires EXPLICIT values: a missing setting is reported as
+        a problem instead of being replaced by an invented deployment default.
+        """
         problems: list[str] = []
         if not self.pose_enabled:
             return problems
-        if not str(self.pose_model).strip():
-            problems.append("POSE_ENABLED=true but POSE_MODEL is not set")
-        if not str(self.pose_device).strip():
-            problems.append("POSE_DEVICE must be a non-empty string")
-        if int(self.pose_imgsz) <= 0:
+        missing: list[str] = []
+        if not str(self.pose_model or "").strip():
+            missing.append("POSE_MODEL")
+        if self.pose_device is None or not str(self.pose_device).strip():
+            missing.append("POSE_DEVICE")
+        if self.pose_imgsz is None:
+            missing.append("POSE_IMGSZ")
+        if self.pose_confidence is None:
+            missing.append("POSE_CONFIDENCE")
+        if self.pose_max_fps is None:
+            missing.append("POSE_MAX_FPS")
+        if missing:
+            problems.append(
+                "POSE_ENABLED=true but required pose settings are not set: "
+                + ", ".join(sorted(missing))
+                + " (no default is assumed; pose inference stays unconfigured)"
+            )
+            return problems
+        if int(self.pose_imgsz) <= 0:  # type: ignore[arg-type]
             problems.append("POSE_IMGSZ must be a positive integer")
-        if not 0.0 <= float(self.pose_confidence) <= 1.0:
+        if not 0.0 <= float(self.pose_confidence) <= 1.0:  # type: ignore[arg-type]
             problems.append("POSE_CONFIDENCE must be within 0..1")
-        if float(self.pose_max_fps) <= 0.0:
+        if float(self.pose_max_fps) <= 0.0:  # type: ignore[arg-type]
             problems.append("POSE_MAX_FPS must be greater than 0")
         return problems
+
 
     @property
     def pose_association_problems(self) -> list[str]:
