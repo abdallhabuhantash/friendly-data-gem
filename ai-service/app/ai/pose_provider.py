@@ -8,13 +8,29 @@ future library upgrade is contained here.
 
 Pinned-API contract (ultralytics==8.3.55)
 -----------------------------------------
-``model.predict(...)`` returns a list of ``Results``. For a pose model each
-result exposes ``boxes`` (with ``xyxyn`` normalized boxes and ``conf``) and
-``keypoints`` (with ``xyn`` normalized keypoints and ``conf``). In that pinned
-release ``Keypoints`` masks low-confidence keypoints by setting their
-coordinates to ``0.0`` when confidence < 0.5, therefore availability is decided
-from the confidence channel and ``(0.0, 0.0)`` is never assumed to be an
-observed joint.
+``model.predict(...)`` returns a list of ``Results``. One input frame MUST
+produce exactly ONE ``Results`` object; zero or several is malformed and is
+never silently reduced to ``results[0]``. For a pose model each result exposes
+``boxes`` (with ``xyxyn`` normalized boxes and ``conf``) and ``keypoints``
+(with ``xyn`` normalized keypoints and ``conf``).
+
+Truthfulness policies enforced here
+-----------------------------------
+* Confidence channel required: a ``Kx2`` coordinate-only keypoint array yields
+  :attr:`PoseStatus.KEYPOINT_CONFIDENCE_ABSENT` with zero instances. Visibility
+  is never inferred from coordinates, so ``(0.0, 0.0)`` and ``(0.4, 0.5)`` are
+  equally unusable without confidence.
+* Reversed pose boxes (``x2 <= x1`` or ``y2 <= y1``) are malformed, never
+  repaired by min/max.
+* Normalized bounds: only floating-point epsilon drift (``1e-9``) is snapped at
+  this parser boundary; substantive out-of-range values are rejected.
+* Array alignment: boxes/keypoints/box-confidence/keypoint-confidence counts
+  must match exactly. A supplied-but-invalid confidence is malformed, never
+  quietly turned into ``None``.
+* Whole-frame strictness: if the model returned pose detections and ANY
+  instance is unusable, the frame is ``MALFORMED_RESULT`` rather than a clean
+  ``OK`` with silently dropped rows. ``OK`` + empty instances therefore means
+  only one thing: the model genuinely detected no people.
 
 Explicitly NOT done here: tracking (``model.track`` is never called — the
 object detector owns person identity), pose-to-person matching, cadence
@@ -25,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import threading
 from typing import Any, Callable, Optional, Protocol, Sequence
 
@@ -32,6 +49,7 @@ from ..domain.geometry import BBox
 from ..domain.pose import (
     COCO_17_KEYPOINTS,
     COCO_17_KEYPOINT_COUNT,
+    PoseContractError,
     PoseFrameResult,
     PoseInstance,
     PoseKeypoint,
@@ -43,8 +61,12 @@ logger = logging.getLogger(__name__)
 #: Confidence floor below which pinned Ultralytics zeroes keypoint coordinates.
 KEYPOINT_VISIBILITY_FLOOR = 0.5
 
-#: Numeric tolerance for normalized bounds checks.
+#: Floating-point drift tolerance snapped at the parser boundary only.
 BOUNDS_TOLERANCE = 1e-9
+
+
+class PoseProviderConfigError(ValueError):
+    """Raised for provider configuration/programming errors (never degraded)."""
 
 
 class PoseProvider(Protocol):
@@ -58,6 +80,15 @@ class PoseProvider(Protocol):
         """Never raises for ordinary model/runtime failure; returns a status."""
 
 
+class _Malformed(Exception):
+    """Internal signal: this frame is unusable."""
+
+    def __init__(self, reason: str, status: PoseStatus = PoseStatus.MALFORMED_RESULT) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.status = status
+
+
 def _is_finite(value: Any) -> bool:
     try:
         number = float(value)
@@ -66,23 +97,25 @@ def _is_finite(value: Any) -> bool:
     return math.isfinite(number)
 
 
-def _valid_confidence(value: Any) -> Optional[float]:
-    """Finite confidence within 0..1, else ``None``. Never clamps."""
+def _unit_value(value: Any) -> Optional[float]:
+    """Finite 0..1 value with epsilon drift snapped; ``None`` when unusable."""
     if not _is_finite(value):
         return None
     number = float(value)
-    if number < -BOUNDS_TOLERANCE or number > 1.0 + BOUNDS_TOLERANCE:
+    if number < 0.0:
+        if number >= -BOUNDS_TOLERANCE:
+            return 0.0
+        return None
+    if number > 1.0:
+        if number <= 1.0 + BOUNDS_TOLERANCE:
+            return 1.0
         return None
     return number
 
 
-def _valid_normalized(value: Any) -> Optional[float]:
-    if not _is_finite(value):
-        return None
-    number = float(value)
-    if number < -BOUNDS_TOLERANCE or number > 1.0 + BOUNDS_TOLERANCE:
-        return None
-    return number
+#: Confidence and normalized coordinates share the same 0..1 contract.
+_valid_confidence = _unit_value
+_valid_normalized = _unit_value
 
 
 def _rows(source: Any) -> Optional[list]:
@@ -116,6 +149,7 @@ def _pair(value: Any) -> Optional[tuple[float, float]]:
 
 
 def _normalized_bbox(row: Any) -> Optional[BBox]:
+    """Strict xyxyn box: ``x1 < x2`` and ``y1 < y2``, never repaired."""
     values = _rows(row)
     if values is None or len(values) < 4:
         return None
@@ -123,37 +157,36 @@ def _normalized_bbox(row: Any) -> Optional[BBox]:
     if any(coord is None for coord in coords):
         return None
     x1, y1, x2, y2 = coords  # type: ignore[misc]
-    left, right = min(x1, x2), max(x1, x2)
-    top, bottom = min(y1, y2), max(y1, y2)
-    width = right - left
-    height = bottom - top
-    if width <= 0.0 or height <= 0.0:
+    if x2 <= x1 or y2 <= y1:
         return None
-    return BBox(left, top, width, height)
+    return BBox(x1, y1, x2 - x1, y2 - y1)
 
 
-def _build_keypoints(
-    points: list, confidences: Optional[list]
-) -> Optional[tuple[PoseKeypoint, ...]]:
-    """Builds a COCO-17 keypoint tuple, or ``None`` for an unsupported schema."""
+def _build_keypoints(points: list, confidences: Optional[list]) -> tuple[PoseKeypoint, ...]:
+    """Builds a confidence-bearing COCO-17 keypoint tuple or raises."""
     if len(points) != COCO_17_KEYPOINT_COUNT:
-        return None
-    if confidences is not None and len(confidences) != COCO_17_KEYPOINT_COUNT:
-        return None
+        raise _Malformed(
+            f"expected {COCO_17_KEYPOINT_COUNT} keypoints, got {len(points)}",
+            PoseStatus.UNSUPPORTED_POSE_SCHEMA,
+        )
+    if confidences is None:
+        raise _Malformed(
+            "keypoint confidence channel absent: coordinates alone are not "
+            "behavioural pose evidence",
+            PoseStatus.KEYPOINT_CONFIDENCE_ABSENT,
+        )
+    if len(confidences) != COCO_17_KEYPOINT_COUNT:
+        raise _Malformed(
+            f"keypoint confidence row has {len(confidences)} entries, "
+            f"expected {COCO_17_KEYPOINT_COUNT}"
+        )
 
     keypoints: list[PoseKeypoint] = []
     for index, name in enumerate(COCO_17_KEYPOINTS):
-        confidence = (
-            _valid_confidence(confidences[index]) if confidences is not None else None
-        )
+        confidence = _valid_confidence(confidences[index])
         coordinates = _pair(points[index])
         # Availability comes from the confidence contract, never coordinates.
-        if confidences is not None and (
-            confidence is None or confidence < KEYPOINT_VISIBILITY_FLOOR
-        ):
-            keypoints.append(PoseKeypoint.unavailable(name, index, confidence))
-            continue
-        if coordinates is None:
+        if confidence is None or confidence < KEYPOINT_VISIBILITY_FLOOR or coordinates is None:
             keypoints.append(PoseKeypoint.unavailable(name, index, confidence))
             continue
         keypoints.append(
@@ -169,6 +202,56 @@ def _build_keypoints(
     return tuple(keypoints)
 
 
+def _parse_instances(boxes: Any, keypoints: Any) -> tuple[PoseInstance, ...]:
+    box_rows = _rows(getattr(boxes, "xyxyn", None))
+    point_rows = _rows(getattr(keypoints, "xyn", None))
+    if box_rows is None or point_rows is None:
+        raise _Malformed("missing normalized boxes/keypoints arrays")
+    if len(box_rows) != len(point_rows):
+        raise _Malformed(
+            f"boxes/keypoints length mismatch ({len(box_rows)} vs {len(point_rows)})"
+        )
+    if not box_rows:
+        return ()
+
+    box_confidences = _rows(getattr(boxes, "conf", None))
+    if box_confidences is not None and len(box_confidences) != len(box_rows):
+        raise _Malformed(
+            f"box confidence length mismatch ({len(box_confidences)} vs {len(box_rows)})"
+        )
+    keypoint_confidences = _rows(getattr(keypoints, "conf", None))
+    if keypoint_confidences is not None and len(keypoint_confidences) != len(point_rows):
+        raise _Malformed("keypoint confidence length mismatch")
+
+    instances: list[PoseInstance] = []
+    for index, points in enumerate(point_rows):
+        point_list = _rows(points)
+        if point_list is None:
+            raise _Malformed("unreadable keypoint row")
+        if keypoint_confidences is None:
+            confidences = None
+        else:
+            confidences = _rows(keypoint_confidences[index])
+            if confidences is None:
+                raise _Malformed("unreadable keypoint confidence row")
+        built = _build_keypoints(point_list, confidences)
+
+        bbox = _normalized_bbox(box_rows[index])
+        if bbox is None:
+            raise _Malformed(f"unusable pose bbox at instance {index}")
+
+        confidence: Optional[float] = None
+        if box_confidences is not None:
+            confidence = _valid_confidence(box_confidences[index])
+            if confidence is None:
+                raise _Malformed(f"invalid box confidence at instance {index}")
+        try:
+            instances.append(PoseInstance(bbox=bbox, keypoints=built, confidence=confidence))
+        except PoseContractError as error:
+            raise _Malformed(f"pose instance rejected: {error}") from error
+    return tuple(instances)
+
+
 def parse_pose_result(result: Any, model_name: Optional[str] = None) -> PoseFrameResult:
     """Pure parser for ONE pinned-Ultralytics pose ``Results`` object."""
     boxes = getattr(result, "boxes", None)
@@ -181,89 +264,28 @@ def parse_pose_result(result: Any, model_name: Optional[str] = None) -> PoseFram
         return PoseFrameResult.failure(
             PoseStatus.MALFORMED_RESULT, "result carries no boxes", model_name
         )
-
-    box_rows = _rows(getattr(boxes, "xyxyn", None))
-    point_rows = _rows(getattr(keypoints, "xyn", None))
-    if box_rows is None or point_rows is None:
-        return PoseFrameResult.failure(
-            PoseStatus.MALFORMED_RESULT,
-            "missing normalized boxes/keypoints arrays",
-            model_name,
-        )
-    if len(box_rows) != len(point_rows):
-        # No arbitrary zip truncation: the whole frame is treated as malformed.
-        return PoseFrameResult.failure(
-            PoseStatus.MALFORMED_RESULT,
-            f"boxes/keypoints length mismatch ({len(box_rows)} vs {len(point_rows)})",
-            model_name,
-        )
-    if not box_rows:
-        return PoseFrameResult(status=PoseStatus.OK, instances=(), model_name=model_name)
-
-    box_confidences = _rows(getattr(boxes, "conf", None))
-    keypoint_confidences = _rows(getattr(keypoints, "conf", None))
-    if keypoint_confidences is not None and len(keypoint_confidences) != len(point_rows):
-        return PoseFrameResult.failure(
-            PoseStatus.MALFORMED_RESULT,
-            "keypoint confidence length mismatch",
-            model_name,
-        )
-
-    instances: list[PoseInstance] = []
-    for index, points in enumerate(point_rows):
-        point_list = _rows(points)
-        if point_list is None:
-            return PoseFrameResult.failure(
-                PoseStatus.MALFORMED_RESULT, "unreadable keypoint row", model_name
-            )
-        confidences = (
-            _rows(keypoint_confidences[index])
-            if keypoint_confidences is not None
-            else None
-        )
-        if keypoint_confidences is not None and confidences is None:
-            return PoseFrameResult.failure(
-                PoseStatus.MALFORMED_RESULT,
-                "unreadable keypoint confidence row",
-                model_name,
-            )
-        built = _build_keypoints(point_list, confidences)
-        if built is None:
-            return PoseFrameResult.failure(
-                PoseStatus.UNSUPPORTED_POSE_SCHEMA,
-                f"expected {COCO_17_KEYPOINT_COUNT} keypoints, got {len(point_list)}",
-                model_name,
-            )
-        bbox = _normalized_bbox(box_rows[index])
-        if bbox is None:
-            # Unusable instance geometry: skip this instance only.
-            continue
-        confidence = (
-            _valid_confidence(box_confidences[index])
-            if box_confidences is not None and index < len(box_confidences)
-            else None
-        )
-        instances.append(
-            PoseInstance(bbox=bbox, keypoints=built, confidence=confidence)
-        )
-
-    return PoseFrameResult(
-        status=PoseStatus.OK, instances=tuple(instances), model_name=model_name
-    )
+    try:
+        instances = _parse_instances(boxes, keypoints)
+    except _Malformed as error:
+        return PoseFrameResult.failure(error.status, error.reason, model_name)
+    return PoseFrameResult(status=PoseStatus.OK, instances=instances, model_name=model_name)
 
 
 class UltralyticsPoseProvider:
     """Pose provider backed by the existing pinned Ultralytics YOLO stack.
 
+    * Configuration is validated in the constructor and never clamped; invalid
+      configuration raises :class:`PoseProviderConfigError`.
     * Weights are NEVER loaded at import time; loading happens lazily on the
       first :meth:`infer` (or via an explicit :meth:`initialize`).
     * ``model_factory`` is injectable so tests need no real weights.
     * One provider owns ONE pose model guarded by its OWN lock; it never
       touches ``YoloDetector``'s lock and never calls ``model.track``.
-    * Ordinary failures (load error, inference exception, malformed output) are
-      reported as degraded :class:`PoseFrameResult` values. Programming or
-      configuration mistakes (e.g. an invalid factory signature) may still
-      surface as exceptions.
+    * A load failure is STICKY for the instance: the provider stays
+      ``available=False`` until future runtime configuration management
+      reconstructs it. No retry policy is implemented here.
+    * Error reasons carry only the model file name and the error text — never
+      full credential-bearing paths, tokens or URLs.
     """
 
     def __init__(
@@ -274,8 +296,21 @@ class UltralyticsPoseProvider:
         confidence: float = 0.25,
         model_factory: Optional[Callable[[str], Any]] = None,
     ) -> None:
-        self.model_name = model_name
-        self.device = device
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise PoseProviderConfigError("model_name must be a non-empty string")
+        if isinstance(imgsz, bool) or not isinstance(imgsz, int) or imgsz <= 0:
+            raise PoseProviderConfigError(f"imgsz must be a positive integer, got {imgsz!r}")
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+            raise PoseProviderConfigError("confidence must be a number in 0..1")
+        if not math.isfinite(float(confidence)) or not 0.0 <= float(confidence) <= 1.0:
+            raise PoseProviderConfigError(
+                f"confidence must be finite within 0..1, got {confidence!r}"
+            )
+        if not isinstance(device, str) or not device.strip():
+            raise PoseProviderConfigError("device must be a non-empty string")
+
+        self.model_name = model_name.strip()
+        self.device = device.strip()
         self.imgsz = int(imgsz)
         self.confidence = float(confidence)
         self._model_factory = model_factory
@@ -287,6 +322,11 @@ class UltralyticsPoseProvider:
     @property
     def available(self) -> bool:
         return not self._load_failed
+
+    @property
+    def _safe_model_label(self) -> str:
+        """Model file name only: never a full, possibly sensitive path."""
+        return os.path.basename(self.model_name) or self.model_name
 
     def _default_factory(self, model_name: str) -> Any:
         from ultralytics import YOLO  # imported lazily: heavy dependency
@@ -308,19 +348,20 @@ class UltralyticsPoseProvider:
         except Exception as error:  # noqa: BLE001 - degradation, not a crash
             self._load_failed = True
             self._load_error = str(error)
-            logger.warning("Pose model %s unavailable: %s", self.model_name, error)
+            logger.warning("Pose model %s unavailable: %s", self._safe_model_label, error)
             return None
         return self._model
 
     def infer(self, frame: Any) -> PoseFrameResult:
         """Runs untracked pose prediction on one frame; never raises normally."""
+        label = self._safe_model_label
         with self._lock:
             model = self._ensure_model()
             if model is None:
                 return PoseFrameResult.failure(
                     PoseStatus.MODEL_UNAVAILABLE,
                     self._load_error or "pose model could not be loaded",
-                    self.model_name,
+                    label,
                 )
             try:
                 results = model.predict(
@@ -331,13 +372,21 @@ class UltralyticsPoseProvider:
                     verbose=False,
                 )
             except Exception as error:  # noqa: BLE001 - degradation, not a crash
-                logger.warning("Pose inference failed on %s: %s", self.model_name, error)
+                logger.warning("Pose inference failed on %s: %s", label, error)
                 return PoseFrameResult.failure(
-                    PoseStatus.INFERENCE_FAILED, str(error), self.model_name
+                    PoseStatus.INFERENCE_FAILED, str(error), label
                 )
 
-        if not results:
+        rows = _rows(results)
+        if rows is None:
             return PoseFrameResult.failure(
-                PoseStatus.MALFORMED_RESULT, "empty result list", self.model_name
+                PoseStatus.MALFORMED_RESULT, "predict() returned no readable results", label
             )
-        return parse_pose_result(results[0], self.model_name)
+        if len(rows) != 1:
+            # One frame in must mean exactly one Results object out.
+            return PoseFrameResult.failure(
+                PoseStatus.MALFORMED_RESULT,
+                f"expected exactly 1 result for 1 frame, got {len(rows)}",
+                label,
+            )
+        return parse_pose_result(rows[0], label)
