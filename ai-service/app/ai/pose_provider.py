@@ -347,8 +347,14 @@ class UltralyticsPoseProvider:
             self._model = factory(self.model_name)
         except Exception as error:  # noqa: BLE001 - degradation, not a crash
             self._load_failed = True
-            self._load_error = str(error)
-            logger.warning("Pose model %s unavailable: %s", self._safe_model_label, error)
+            self._load_error = _safe_reason("pose model unavailable", error)
+            # Only the exception CLASS is logged: messages may embed private
+            # filesystem paths or credentials.
+            logger.warning(
+                "Pose model %s unavailable (%s)",
+                self._safe_model_label,
+                type(error).__name__,
+            )
             return None
         return self._model
 
