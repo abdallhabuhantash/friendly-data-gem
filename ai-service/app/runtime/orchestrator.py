@@ -50,6 +50,24 @@ from .stream_hub import StreamHub
 logger = logging.getLogger(__name__)
 
 
+def _independent_frame_copy(frame):  # noqa: ANN001, ANN201 - opaque frame object
+    """Returns an INDEPENDENT copy of ``frame`` or raises.
+
+    Production frames are NumPy/OpenCV arrays, so ``copy()`` yields a private
+    buffer. Anything that cannot produce a distinct object is refused: the pose
+    worker must never share a mutable frame with the Task 1 capture path.
+    """
+    copy = getattr(frame, "copy", None)
+    if not callable(copy):
+        raise TypeError("frame cannot be copied for pose hand-off")
+    duplicate = copy()
+    if duplicate is None or duplicate is frame:
+        raise TypeError("frame copy is not an independent object")
+    return duplicate
+
+
+
+
 class Orchestrator:
     """Owns every long-lived resource of the AI service."""
 
