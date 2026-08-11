@@ -65,8 +65,19 @@ KEYPOINT_VISIBILITY_FLOOR = 0.5
 BOUNDS_TOLERANCE = 1e-9
 
 
+def _safe_reason(stage: str, error: BaseException) -> str:
+    """Failure reason built ONLY from the stage and the exception class name.
+
+    Raw exception text is deliberately discarded: model-load errors can embed
+    private filesystem paths and inference errors can embed credential-bearing
+    stream URLs. Neither is ever stored, returned or logged at warning level.
+    """
+    return f"{stage} ({type(error).__name__})"
+
+
 class PoseProviderConfigError(ValueError):
     """Raised for provider configuration/programming errors (never degraded)."""
+
 
 
 class PoseProvider(Protocol):
