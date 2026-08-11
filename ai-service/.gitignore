@@ -15,3 +15,6 @@ secrets/*.json
 # Demo clips are local-only; the samples README stays tracked.
 samples/*
 !samples/README.md
+
+# Benchmark output is local measurement data, never committed.
+benchmark-results/
