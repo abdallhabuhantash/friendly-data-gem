@@ -27,6 +27,8 @@ strings are never tie-breakers. Detector confidence is never a ranking signal.
 Every resolved match keeps that pose's COMPLETE pair-facts tuple (winning and
 rejected persons alike) for diagnostics; a person_tracking_id must be None or a
 non-blank string, otherwise the whole frame is INVALID_PERSON_OBSERVATIONS.
+"""
+
 
 
 from __future__ import annotations
