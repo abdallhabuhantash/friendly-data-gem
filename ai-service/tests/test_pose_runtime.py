@@ -315,7 +315,6 @@ def test_status_never_exposes_the_model_path() -> None:
     assert status["model"] == "yolo11n-pose.pt"
     assert "/private/path" not in str(status)
 
-
 # --- worker resilience --------------------------------------------------
 def test_worker_survives_a_failing_provider() -> None:
     pose = runtime(ExplodingProvider())
@@ -347,34 +346,208 @@ def test_submission_never_blocks_on_inference() -> None:
         pose.submit(job("cam-a", 1, 1))
         assert provider.entered.wait(2.0) is True
 
-        started = time.monotonic()
         assert pose.submit(job("cam-a", 1, 2)) is True
-        assert (time.monotonic() - started) < 0.5
         assert pose.pending_frame_sequence("cam-a") == 2
     finally:
         provider.gate.set()
         pose.stop(timeout=2.0)
 
 
+class ConcurrencyProvider:
+    """Measures real inference overlap instead of hoping a thread ran."""
+
+    available = True
+    model_name = "yolo11n-pose.pt"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.inflight = 0
+        self.max_inflight = 0
+        self.completed = 0
+        self.calls: list[object] = []
+        self.first_entered = threading.Event()
+        self.gate = threading.Event()
+        self.both_done = threading.Event()
+
+    def infer(self, frame):  # noqa: ANN001
+        with self._lock:
+            self.calls.append(frame)
+            self.inflight += 1
+            self.max_inflight = max(self.max_inflight, self.inflight)
+        self.first_entered.set()
+        self.gate.wait(3.0)
+        try:
+            return PoseFrameResult(status=PoseStatus.OK)
+        finally:
+            with self._lock:
+                self.inflight -= 1
+                self.completed += 1
+                if self.completed == 2:
+                    self.both_done.set()
+
+
 def test_global_inference_concurrency_is_one() -> None:
-    provider = FakeProvider()
-    provider.gate = threading.Event()
+    provider = ConcurrencyProvider()
     pose = runtime(provider)
     pose.activate("cam-a", 1)
     pose.activate("cam-b", 1)
     pose.start()
     try:
         pose.submit(job("cam-a", 1, 1))
-        assert provider.entered.wait(2.0) is True
+        assert provider.first_entered.wait(2.0) is True
         pose.submit(job("cam-b", 1, 1))
-        # While one inference is gated, no second inference may start.
-        time.sleep(0.1)
-        assert len(provider.calls) == 1
+        provider.gate.set()
+        assert provider.both_done.wait(3.0) is True
+        # Both jobs ran, but never at the same time.
+        assert provider.max_inflight == 1
     finally:
         provider.gate.set()
+        pose.stop(timeout=3.0)
+
+
+# --- stop / start lifecycle safety --------------------------------------
+def test_stop_timeout_keeps_a_live_worker_truthful_and_unique() -> None:
+    provider = FakeProvider()
+    provider.gate = threading.Event()
+    pose = runtime(provider)
+    pose.activate("cam-a", 1)
+    pose.start()
+    first = pose._thread  # noqa: SLF001 - lifecycle identity assertion
+    try:
+        pose.submit(job("cam-a", 1, 1))
+        assert provider.entered.wait(2.0) is True
+
+        # Stop cannot complete: inference is blocked inside the provider.
+        pose.stop(timeout=0.05)
+        assert pose.worker_running is True
+        assert pose.status()["stop_timed_out"] is True
+
+        # No second worker may be created while the first is alive.
+        pose.start()
+        assert pose._thread is first  # noqa: SLF001
+    finally:
+        provider.gate.set()
+    # Once the provider returns, the worker observes stop and exits.
+    first.join(3.0)
+    assert first.is_alive() is False
+    assert pose.worker_running is False
+    pose.stop(timeout=1.0)
+    assert pose._thread is None  # noqa: SLF001
+    assert pose.status()["stop_timed_out"] is False
+
+
+def test_repeated_start_creates_at_most_one_worker() -> None:
+    pose = runtime(FakeProvider())
+    pose.start()
+    try:
+        worker = pose._thread  # noqa: SLF001
+        for _ in range(5):
+            pose.start()
+            assert pose._thread is worker  # noqa: SLF001
+    finally:
         pose.stop(timeout=2.0)
+
+
+def test_concurrent_start_creates_at_most_one_worker() -> None:
+    pose = runtime(FakeProvider())
+    ready = threading.Barrier(4)
+    seen: list[object] = []
+
+    def racer() -> None:
+        ready.wait(2.0)
+        pose.start()
+        seen.append(pose._thread)  # noqa: SLF001
+
+    threads = [threading.Thread(target=racer) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(3.0)
+    try:
+        assert len({id(entry) for entry in seen}) == 1
+        assert pose.worker_running is True
+    finally:
+        pose.stop(timeout=2.0)
+
+
+# --- cadence accounting -------------------------------------------------
+def test_failed_frame_copy_does_not_consume_the_cadence_slot() -> None:
+    clock = FakeClock()
+    pose = runtime(interval=1.0, clock=clock)
+    pose.activate("cam-a", 1)
+
+    def failing_copy():  # noqa: ANN202
+        raise TypeError("frame cannot be copied for pose hand-off")
+
+    with pytest.raises(TypeError):
+        pose.maybe_submit(
+            camera_id="cam-a",
+            generation=1,
+            frame_sequence=1,
+            observed_at=None,
+            observations=observations(),
+            copy_frame=failing_copy,
+        )
+    # No job exists, so the next frame must still be admitted immediately.
+    assert pose.pending_count() == 0
+    assert pose.maybe_submit(
+        camera_id="cam-a",
+        generation=1,
+        frame_sequence=2,
+        observed_at=None,
+        observations=observations(),
+        copy_frame=lambda: "copy-2",
+    ) is True
+    assert pose.pending_frame_sequence("cam-a") == 2
+
+
+def test_generation_invalid_submission_does_not_consume_the_cadence_slot() -> None:
+    clock = FakeClock()
+    pose = runtime(interval=1.0, clock=clock)
+    pose.activate("cam-a", 1)
+    # Admit and accept one job so a cadence baseline exists.
+    assert pose.maybe_submit(
+        camera_id="cam-a",
+        generation=1,
+        frame_sequence=1,
+        observed_at=None,
+        observations=observations(),
+        copy_frame=lambda: "copy-1",
+    ) is True
+    clock.advance(1.0)
+
+    # The incarnation ends between the cadence check and job acceptance.
+    original = pose.submit
+
+    def submit_after_generation_change(job_):  # noqa: ANN001, ANN202
+        pose.reset_camera("cam-a")
+        pose.activate("cam-a", 2)
+        return original(job_)
+
+    pose.submit = submit_after_generation_change  # type: ignore[method-assign]
+    assert pose.maybe_submit(
+        camera_id="cam-a",
+        generation=1,
+        frame_sequence=2,
+        observed_at=None,
+        observations=observations(),
+        copy_frame=lambda: "copy-2",
+    ) is False
+    pose.submit = original  # type: ignore[method-assign]
+
+    # The new incarnation starts with a free cadence slot.
+    assert pose.maybe_submit(
+        camera_id="cam-a",
+        generation=2,
+        frame_sequence=3,
+        observed_at=None,
+        observations=observations(),
+        copy_frame=lambda: "copy-3",
+    ) is True
+    assert pose.pending_frame_sequence("cam-a") == 3
 
 
 def test_negative_interval_is_rejected() -> None:
     with pytest.raises(ValueError):
         PoseRuntime(FakeProvider(), min_interval_seconds=-1.0)
+
