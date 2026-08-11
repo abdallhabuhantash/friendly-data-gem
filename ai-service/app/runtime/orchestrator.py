@@ -97,6 +97,10 @@ class Orchestrator:
 
 
         self.detector: Optional[YoloDetector] = None
+        # Optional, asynchronous, OFF unless explicitly configured.
+        self.pose: Optional[PoseRuntime] = None
+        self._pose_problems: list[str] = []
+
         self.system = SystemConfig()
         self._rules: list[RuleConfig] = []
         self._stop = threading.Event()
