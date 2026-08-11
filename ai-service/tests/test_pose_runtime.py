@@ -223,7 +223,12 @@ def test_inflight_result_cannot_be_stored_under_the_new_generation() -> None:
     pose._run_job(taken)  # noqa: SLF001
 
     assert pose.latest_result("cam-a") is None
-    assert pose.metrics("cam-a")["dropped_stale"] == 1
+    # Stale accounting stays OUT of the new incarnation's metrics.
+    assert pose.stale_discards("cam-a") == 1
+    metrics = pose.metrics("cam-a")
+    assert metrics["active_generation"] == 2
+    assert metrics["processed"] == 0
+
 
 
 def test_activate_same_generation_twice_keeps_state() -> None:
