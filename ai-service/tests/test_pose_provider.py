@@ -557,3 +557,71 @@ def test_no_behavioural_features_leak_into_domain():
         assert not hasattr(instance, forbidden)
     assert math.isfinite(instance.bbox.area)
     assert isinstance(PoseFrameResult.failure(PoseStatus.INFERENCE_FAILED).instances, tuple)
+
+
+# --- failure-reason security hardening -----------------------------------
+
+_PRIVATE_PATH_MESSAGE = "/home/private-user/models/secret.pt missing"
+_CREDENTIAL_MESSAGE = "rtsp://admin:super-secret@example.invalid/stream"
+
+
+def _captured(caplog) -> str:
+    return "\n".join(record.getMessage() for record in caplog.records)
+
+
+def test_sec_model_load_failure_reason_hides_private_path(caplog):
+    def broken(_name):
+        raise FileNotFoundError(_PRIVATE_PATH_MESSAGE)
+
+    provider = UltralyticsPoseProvider(
+        "/home/private-user/models/secret.pt", model_factory=broken
+    )
+    with caplog.at_level("WARNING"):
+        result = provider.infer(object())
+
+    assert result.status is PoseStatus.MODEL_UNAVAILABLE
+    assert result.reason == "pose model unavailable (FileNotFoundError)"
+    logs = _captured(caplog)
+    for leak in ("/home/private-user", "secret.pt missing", _PRIVATE_PATH_MESSAGE):
+        assert leak not in (result.reason or "")
+        assert leak not in logs
+    # class name and safe basename are allowed
+    assert "FileNotFoundError" in (result.reason or "")
+    assert "secret.pt" in logs  # basename only
+    assert result.model_name == "secret.pt"
+
+
+def test_sec_inference_failure_reason_hides_credentials(caplog):
+    provider = UltralyticsPoseProvider(
+        "fake-pose.pt",
+        model_factory=lambda _: FakeModel(error=RuntimeError(_CREDENTIAL_MESSAGE)),
+    )
+    with caplog.at_level("WARNING"):
+        result = provider.infer(object())
+
+    assert result.status is PoseStatus.INFERENCE_FAILED
+    assert result.reason == "pose inference failed (RuntimeError)"
+    logs = _captured(caplog)
+    for leak in ("admin", "super-secret", _CREDENTIAL_MESSAGE, "rtsp://"):
+        assert leak not in (result.reason or "")
+        assert leak not in logs
+    assert "RuntimeError" in (result.reason or "")
+    assert "fake-pose.pt" in logs  # safe basename may appear
+
+
+def test_sec_sticky_load_failure_unchanged_with_safe_reason():
+    calls = []
+
+    def broken(name):
+        calls.append(name)
+        raise FileNotFoundError(_PRIVATE_PATH_MESSAGE)
+
+    provider = UltralyticsPoseProvider("missing.pt", model_factory=broken)
+    assert provider.initialize() is False
+    assert provider.available is False
+    first = provider.infer(object())
+    second = provider.infer(object())
+    assert provider.initialize() is False
+    assert calls == ["missing.pt"]  # loaded once, never retried
+    assert first.reason == second.reason == "pose model unavailable (FileNotFoundError)"
+    assert first.status is second.status is PoseStatus.MODEL_UNAVAILABLE
