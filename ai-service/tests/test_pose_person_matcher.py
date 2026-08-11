@@ -135,9 +135,10 @@ def test_exact_tie_is_ambiguous():
 
 def test_overlapping_candidates_without_dominance_are_ambiguous():
     pose_box = BBox(0.30, 0.10, 0.20, 0.40)
-    # Person X: bigger IoU-ish overlap; Person Y: better keypoint ratio.
-    left = BBox(0.28, 0.08, 0.24, 0.44)
-    right = BBox(0.20, 0.05, 0.45, 0.50)
+    # Person 11: higher bbox IoU but only partial pose containment.
+    # Person 24: full pose containment but lower IoU. Neither dominates.
+    left = BBox(0.35, 0.10, 0.20, 0.40)
+    right = BBox(0.25, 0.05, 0.35, 0.50)
     result = associate_pose_frame(
         pose_result=ok_pose(pose_in(pose_box)),
         observations=frame(person(left, "11"), person(right, "24")),
