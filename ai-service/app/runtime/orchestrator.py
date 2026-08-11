@@ -235,51 +235,83 @@ class Orchestrator:
         # an artificial ceiling. No frame queue exists either way.
         max_fps = float(self.settings.inference_max_fps)
         min_interval = (1.0 / max_fps) if max_fps > 0 else 0.0
-        processed = 0
-        window_start = time.monotonic()
-        window_frames = 0
 
         while not self._stop.is_set():
-            worker = self.cameras.worker(camera_id)
-            camera = self.cameras.config(camera_id)
-            if worker is None or camera is None:
+            runtime = self.cameras.snapshot(camera_id)
+            if runtime is None:
                 return
 
+            if self._seen_generation.get(camera_id) != runtime.generation:
+                # The replacement worker may become visible before the control
+                # thread reaches its cleanup: whoever arrives first performs the
+                # transition, under this camera's lifecycle lock.
+                if self._transition_generation(camera_id) is None:
+                    return
+                continue
+
             cycle_start = time.monotonic()
-            frame, sequence = worker.latest_frame_with_sequence()
+            frame, sequence = runtime.worker.latest_frame_with_sequence()
             if frame is None:
                 self._stop.wait(0.2)
                 continue
-            if not self._frame_gate.accept(camera_id, sequence):
-                # The same captured frame must never be analysed twice: a frozen
-                # stream would otherwise fake multiple matching frames.
-                self._stop.wait(0.005)
-                continue
-
-            processed += 1
-            if self.settings.process_every_n_frames > 1 and (
-                processed % int(self.settings.process_every_n_frames)
-            ):
-                self._stop.wait(0.005)
-                continue
 
             try:
-                self._process_frame(camera, frame, frame_sequence=sequence)
+                analysed = self._guarded_process(runtime, frame, sequence)
             except Exception as exc:  # one camera never takes down the service
-                logger.exception("Inference failed for camera %s: %s", camera.name, exc)
+                logger.exception("Inference failed for camera %s: %s", runtime.config.name, exc)
                 self._stop.wait(0.5)
                 continue
 
-            window_frames += 1
-            elapsed = time.monotonic() - window_start
-            if elapsed >= 2.0:
-                self._inference_fps[camera_id] = window_frames / elapsed
-                window_start = time.monotonic()
-                window_frames = 0
+            if not analysed:
+                self._stop.wait(0.005)
+                continue
 
             remaining = min_interval - (time.monotonic() - cycle_start)
             if remaining > 0:
                 self._stop.wait(remaining)
+
+    def _guarded_process(self, runtime, frame, sequence) -> bool:  # noqa: ANN001
+        """Runs the state-mutating part of one frame for ONE stream incarnation.
+
+        Everything that touches per-camera runtime state — frame gate, engines,
+        tracker state, published frame, FPS — happens while this camera's
+        lifecycle lock is held, so a concurrent removal/reconfiguration must wait
+        for the frame to leave this section before its final reset. The
+        generation is revalidated inside the lock, so a frame captured by a
+        previous incarnation can never repopulate state after a reset.
+        """
+        camera_id = runtime.camera_id
+        with self.cameras.lock(camera_id):
+            if self.cameras.generation(camera_id) != runtime.generation:
+                return False
+            if self._seen_generation.get(camera_id) != runtime.generation:
+                return False
+            if not self._frame_gate.accept(camera_id, sequence):
+                # The same captured frame must never be analysed twice: a frozen
+                # stream would otherwise fake multiple matching frames.
+                return False
+
+            count = self._processed_frames.get(camera_id, 0) + 1
+            self._processed_frames[camera_id] = count
+            every = int(self.settings.process_every_n_frames)
+            if every > 1 and count % every:
+                return False
+
+            self._process_frame(runtime.config, frame, frame_sequence=sequence)
+            self._record_inference_fps(camera_id)
+            return True
+
+    def _record_inference_fps(self, camera_id: str) -> None:
+        """Per-camera FPS window; belongs to the current incarnation only."""
+        window_start, frames = self._fps_window.get(camera_id, (time.monotonic(), 0))
+        frames += 1
+        elapsed = time.monotonic() - window_start
+        if elapsed >= 2.0:
+            self._inference_fps[camera_id] = frames / elapsed
+            self._fps_window[camera_id] = (time.monotonic(), 0)
+        else:
+            self._fps_window[camera_id] = (window_start, frames)
+
 
     def _process_frame(
         self, camera: CameraConfig, frame, frame_sequence: Optional[int] = None
