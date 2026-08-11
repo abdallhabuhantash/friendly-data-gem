@@ -164,6 +164,8 @@ class PoseRuntime:
         self._metrics: dict[str, _CameraMetrics] = {}
         #: Completions of ended incarnations, kept OUT of per-camera metrics.
         self._stale_discards: int = 0
+        self._stale_by_camera: dict[str, int] = {}
+
         self._stop_timed_out: bool = False
 
     # --- lifecycle --------------------------------------------------------
