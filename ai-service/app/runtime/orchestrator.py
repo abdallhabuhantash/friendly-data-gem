@@ -515,6 +515,21 @@ class Orchestrator:
 
 
     # --- control loop -----------------------------------------------------
+    def pose_status(self) -> dict:
+        """Measured pose diagnostics only — never a promised capability."""
+        if self.pose is None:
+            return {
+                "enabled": bool(self.settings.pose_enabled),
+                "running": False,
+                "association_configured": False,
+                "problems": list(self._pose_problems),
+                "cameras": {},
+            }
+        status = dict(self.pose.status())
+        status["enabled"] = bool(self.settings.pose_enabled)
+        status["problems"] = list(self._pose_problems)
+        return status
+
     def _health_payload(self) -> dict:
         fps_values = list(self._inference_fps.values())
         return self.health.payload(
@@ -523,6 +538,7 @@ class Orchestrator:
             inference_fps=(sum(fps_values) / len(fps_values)) if fps_values else 0.0,
             gpu_load_percent=measure_gpu_load(),
         )
+
 
     def _control_loop(self) -> None:
         last_config = 0.0
