@@ -79,6 +79,26 @@ class Settings(BaseSettings):
     pose_assoc_min_available_keypoints: Optional[int] = None
     pose_assoc_min_keypoint_inside_ratio: Optional[float] = None
 
+    @field_validator(
+        "pose_device",
+        "pose_imgsz",
+        "pose_confidence",
+        "pose_max_fps",
+        "pose_assoc_min_bbox_iou",
+        "pose_assoc_min_pose_containment",
+        "pose_assoc_min_available_keypoints",
+        "pose_assoc_min_keypoint_inside_ratio",
+        mode="before",
+    )
+    @classmethod
+    def _blank_pose_value_is_unset(cls, value):  # noqa: ANN001, ANN206
+        """An empty/blank env entry means UNSET, never an invented default."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+
 
 
     # --- Demo sources ---
