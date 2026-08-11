@@ -129,6 +129,67 @@ class Settings(BaseSettings):
                 pass
         return self.demo_video_path or None
 
+    # --- Pose configuration truthfulness ---------------------------------
+    @property
+    def pose_inference_problems(self) -> list[str]:
+        """Pose inference configuration problems; empty means usable."""
+        problems: list[str] = []
+        if not self.pose_enabled:
+            return problems
+        if not str(self.pose_model).strip():
+            problems.append("POSE_ENABLED=true but POSE_MODEL is not set")
+        if not str(self.pose_device).strip():
+            problems.append("POSE_DEVICE must be a non-empty string")
+        if int(self.pose_imgsz) <= 0:
+            problems.append("POSE_IMGSZ must be a positive integer")
+        if not 0.0 <= float(self.pose_confidence) <= 1.0:
+            problems.append("POSE_CONFIDENCE must be within 0..1")
+        if float(self.pose_max_fps) <= 0.0:
+            problems.append("POSE_MAX_FPS must be greater than 0")
+        return problems
+
+    @property
+    def pose_association_problems(self) -> list[str]:
+        """Association threshold problems; empty means a complete valid spec."""
+        if not self.pose_enabled:
+            return []
+        values = {
+            "POSE_ASSOC_MIN_BBOX_IOU": self.pose_assoc_min_bbox_iou,
+            "POSE_ASSOC_MIN_POSE_CONTAINMENT": self.pose_assoc_min_pose_containment,
+            "POSE_ASSOC_MIN_KEYPOINT_INSIDE_RATIO": self.pose_assoc_min_keypoint_inside_ratio,
+        }
+        problems: list[str] = []
+        missing = [name for name, value in values.items() if value is None]
+        if self.pose_assoc_min_available_keypoints is None:
+            missing.append("POSE_ASSOC_MIN_AVAILABLE_KEYPOINTS")
+        if missing:
+            problems.append(
+                "pose association configuration incomplete: "
+                + ", ".join(sorted(missing))
+                + " (pose association stays unconfigured)"
+            )
+            return problems
+        for name, value in values.items():
+            if not 0.0 <= float(value) <= 1.0:  # type: ignore[arg-type]
+                problems.append(f"{name} must be within 0..1")
+        keypoints = int(self.pose_assoc_min_available_keypoints)  # type: ignore[arg-type]
+        if not 1 <= keypoints <= 17:
+            problems.append("POSE_ASSOC_MIN_AVAILABLE_KEYPOINTS must be within 1..17")
+        return problems
+
+    @property
+    def pose_inference_configured(self) -> bool:
+        return self.pose_enabled and not self.pose_inference_problems
+
+    @property
+    def pose_association_configured(self) -> bool:
+        return self.pose_enabled and not self.pose_association_problems
+
+    @property
+    def pose_min_interval_seconds(self) -> float:
+        fps = float(self.pose_max_fps)
+        return (1.0 / fps) if fps > 0 else 0.0
+
     def validate_runtime(self) -> list[str]:
         """Returns human-readable configuration problems (never secret values)."""
         problems: list[str] = []
@@ -138,7 +199,11 @@ class Settings(BaseSettings):
             problems.append("SUPABASE_SERVICE_ROLE_KEY is not set")
         if not self.ai_service_key:
             problems.append("AI_SERVICE_KEY is not set (stream endpoint stays closed)")
+        # Pose is optional: its problems are reported, never fatal.
+        problems.extend(self.pose_inference_problems)
+        problems.extend(self.pose_association_problems)
         return problems
+
 
 
 @lru_cache
