@@ -140,10 +140,13 @@ def test_k_zero_area_object_safe():
     person = BBox(0.2, 0.2, 0.4, 0.4)
     obj = BBox(0.3, 0.5, 0.0, 0.0)
     facts = resolve_bbox(person=person, obj=obj, spec=SPEC)
-    assert facts.available is True
+    assert facts.available is False
+    assert facts.center_inside_lower_person_region is None
+    assert facts.configured_region_center_membership is None
     assert facts.lower_region_containment_ratio is None
     assert facts.lower_region_intersection_area == 0.0
     assert facts.reason == "zero_area_object"
+
 
 
 def test_center_membership_and_overlap_are_separate():
