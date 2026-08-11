@@ -27,6 +27,8 @@ from ..domain.models import (
     RuleConfig,
     SystemConfig,
 )
+from ..domain.observations import FrameObservations
+
 
 from ..events.snapshot_service import SnapshotService, annotate_frame, encode_jpeg
 from ..events.event_publisher import EventPublisher
@@ -41,7 +43,9 @@ from ..notifications.notification_manager import NotificationManager
 from ..notifications.telegram import TelegramProvider
 from .frame_gate import FrameGate
 from .health_reporter import HealthReporter, measure_gpu_load
+from .pose_runtime import PoseRuntime
 from .stream_hub import StreamHub
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +53,11 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     """Owns every long-lived resource of the AI service."""
 
-    def __init__(self, settings) -> None:  # noqa: ANN001 - Settings
+    def __init__(self, settings, pose_provider_factory=None) -> None:  # noqa: ANN001 - Settings
         self.settings = settings
+        # Injectable ONLY so tests need no pose weights; production stays lazy.
+        self._pose_provider_factory = pose_provider_factory
+
         self.stream_hub = StreamHub()
         self.repository = SupabaseRepository(
             settings.supabase_url,
@@ -92,6 +99,10 @@ class Orchestrator:
 
 
         self.detector: Optional[YoloDetector] = None
+        # Optional, asynchronous, OFF unless explicitly configured.
+        self.pose: Optional[PoseRuntime] = None
+        self._pose_problems: list[str] = []
+
         self.system = SystemConfig()
         self._rules: list[RuleConfig] = []
         self._stop = threading.Event()
@@ -119,10 +130,62 @@ class Orchestrator:
             self.settings.yolo_imgsz,
             self.settings.yolo_tracker,
         )
+        # Pose is optional: a pose configuration problem must never prevent
+        # Task 1 from starting, and never raise out of start().
+        self._start_pose_runtime()
         self._refresh_configuration()
         self._control = threading.Thread(target=self._control_loop, name="control", daemon=True)
         self._control.start()
         logger.info("AI service started in %s mode", self.system.operation_mode)
+
+    def _start_pose_runtime(self) -> None:
+        """Constructs the pose runtime ONLY when explicitly enabled + valid."""
+        settings = self.settings
+        self._pose_problems = list(settings.pose_inference_problems) + list(
+            settings.pose_association_problems
+        )
+        if not settings.pose_enabled:
+            return
+        if not settings.pose_inference_configured:
+            logger.warning("Pose enabled but not usable: configuration incomplete")
+            return
+        try:
+            factory = self._pose_provider_factory
+            if factory is not None:
+                provider = factory()
+            else:
+                # Lazy weights: constructing the provider loads nothing.
+                from ..ai.pose_provider import UltralyticsPoseProvider
+
+                provider = UltralyticsPoseProvider(
+                    settings.pose_model,
+                    device=settings.pose_device,
+                    imgsz=int(settings.pose_imgsz),
+                    confidence=float(settings.pose_confidence),
+                )
+            spec = None
+            if settings.pose_association_configured:
+                from ..domain.pose_association import PoseAssociationSpec
+
+                spec = PoseAssociationSpec(
+                    min_bbox_iou=float(settings.pose_assoc_min_bbox_iou),
+                    min_pose_bbox_containment=float(settings.pose_assoc_min_pose_containment),
+                    min_available_keypoints=int(settings.pose_assoc_min_available_keypoints),
+                    min_keypoint_inside_ratio=float(
+                        settings.pose_assoc_min_keypoint_inside_ratio
+                    ),
+                )
+            runtime = PoseRuntime(
+                provider,
+                min_interval_seconds=settings.pose_min_interval_seconds,
+                association_spec=spec,
+            )
+            runtime.start()
+            self.pose = runtime
+            logger.info("Pose runtime started (association configured: %s)", spec is not None)
+        except Exception as error:  # noqa: BLE001 - optional capability only
+            self.pose = None
+            logger.warning("Pose runtime unavailable (%s)", type(error).__name__)
 
     def stop(self) -> None:
         self._stop.set()
@@ -130,8 +193,11 @@ class Orchestrator:
         for thread in self._threads.values():
             thread.join(timeout=3.0)
         self._threads.clear()
+        if self.pose:
+            self.pose.stop(timeout=3.0)
         if self._control:
             self._control.join(timeout=3.0)
+
         try:
             self.health.beat(
                 online=False,
@@ -168,6 +234,11 @@ class Orchestrator:
                 with self.cameras.lock(camera_id):
                     self._reset_camera_runtime(camera_id)
                     self._seen_generation.pop(camera_id, None)
+                # Removal never waits for an in-flight pose inference: the pose
+                # worker discards its result because the camera is deactivated.
+                pose = getattr(self, "pose", None)
+                if pose:
+                    pose.deactivate(camera_id)
 
         for camera_id in active:
             thread = self._threads.get(camera_id)
@@ -200,7 +271,12 @@ class Orchestrator:
                 return generation
             self._reset_camera_runtime(camera_id)
             self._seen_generation[camera_id] = generation
-            return generation
+        # Activation happens after the old incarnation's pose state is gone, so
+        # a late generation-N pose result can never be stored as generation N+1.
+        pose = getattr(self, "pose", None)
+        if pose:
+            pose.activate(camera_id, generation)
+        return generation
 
     def _reset_camera_runtime(self, camera_id: str) -> None:
         """Idempotently drops all runtime state of ONE camera.
@@ -219,6 +295,12 @@ class Orchestrator:
         self._frame_gate.reset(camera_id)
         if self.detector:
             self.detector.reset_camera(camera_id)
+        pose = getattr(self, "pose", None)
+        if pose:
+            # Pending job, latest result, cadence timestamps and incarnation
+            # metrics all belong to the incarnation being dropped.
+            pose.reset_camera(camera_id)
+
 
 
 
@@ -306,9 +388,41 @@ class Orchestrator:
             if every > 1 and count % every:
                 return False
 
-            self._process_frame(runtime.config, frame, frame_sequence=sequence)
+            observations = self._process_frame(
+                runtime.config, frame, frame_sequence=sequence
+            )
             self._record_inference_fps(camera_id)
-            return True
+
+        # Pose submission happens AFTER the camera lifecycle lock is released and
+        # never runs pose inference here: at most a cadence check, one frame copy
+        # and a pending-slot replacement. Task 1 has already completed above.
+        if getattr(self, "pose", None) is not None:
+            self._submit_pose(runtime, frame, sequence, observations)
+        return True
+
+    def _submit_pose(self, runtime, frame, sequence, observations) -> None:  # noqa: ANN001
+        """Cheap, non-blocking hand-off of one frame to the pose worker."""
+        pose = self.pose
+        if pose is None or observations is None:
+            return
+        try:
+            pose.maybe_submit(
+                camera_id=runtime.camera_id,
+                generation=runtime.generation,
+                frame_sequence=sequence,
+                observed_at=observations.observed_at,
+                observations=observations,
+                # Copy happens only for a frame the cadence actually admits.
+                copy_frame=lambda: frame.copy() if hasattr(frame, "copy") else frame,
+                source_mode=observations.source_mode,
+            )
+        except Exception as error:  # noqa: BLE001 - pose must never break Task 1
+            logger.warning(
+                "Pose submission skipped for camera %s (%s)",
+                runtime.camera_id,
+                type(error).__name__,
+            )
+
 
     def _record_inference_fps(self, camera_id: str) -> None:
         """Per-camera FPS window; belongs to the current incarnation only."""
@@ -324,7 +438,8 @@ class Orchestrator:
 
     def _process_frame(
         self, camera: CameraConfig, frame, frame_sequence: Optional[int] = None
-    ) -> None:
+    ) -> Optional[FrameObservations]:
+        """Analyses one frame and returns its derived observation view."""
         assert self.detector is not None
         detections = self.detector.detect(frame, camera.id)
         applicable_rules = self._rules_for(camera)
@@ -365,12 +480,8 @@ class Orchestrator:
         if jpeg:
             self.stream_hub.publish(camera.id, jpeg)
 
-        if not applicable_rules:
-            return
-
-        # One detection pass feeds every applicable rule through the registry:
-        # no inference duplication, no silently ignored rules, and one failing
-        # engine never suppresses another engine's events for this frame.
+        # The observation view is derived from THIS frame and is independent of
+        # rule configuration, so pose scheduling never depends on Task 1 rules.
         now_mono = time.monotonic()
         detected_at = datetime.now(timezone.utc)
         observations = build_frame_observations(
@@ -380,6 +491,13 @@ class Orchestrator:
             observed_at=detected_at,
             source_mode=self.system.operation_mode,
         )
+
+        if not applicable_rules:
+            return observations
+
+        # One detection pass feeds every applicable rule through the registry:
+        # no inference duplication, no silently ignored rules, and one failing
+        # engine never suppresses another engine's events for this frame.
         context = FrameContext(
             camera=camera,
             detections=detections,
@@ -388,6 +506,7 @@ class Orchestrator:
             source_mode=self.system.operation_mode,
             detected_at=detected_at,
         )
+
         for draft in self.registry.dispatch(applicable_rules, context):
             # `annotated` is derived from exactly the frame that produced
             # this draft, so an instant single-frame event can never be
@@ -395,9 +514,26 @@ class Orchestrator:
             self.publisher.publish(
                 draft.event, frame=annotated, save_snapshot=draft.save_snapshot
             )
+        return observations
+
 
 
     # --- control loop -----------------------------------------------------
+    def pose_status(self) -> dict:
+        """Measured pose diagnostics only — never a promised capability."""
+        if self.pose is None:
+            return {
+                "enabled": bool(self.settings.pose_enabled),
+                "running": False,
+                "association_configured": False,
+                "problems": list(self._pose_problems),
+                "cameras": {},
+            }
+        status = dict(self.pose.status())
+        status["enabled"] = bool(self.settings.pose_enabled)
+        status["problems"] = list(self._pose_problems)
+        return status
+
     def _health_payload(self) -> dict:
         fps_values = list(self._inference_fps.values())
         return self.health.payload(
@@ -406,6 +542,7 @@ class Orchestrator:
             inference_fps=(sum(fps_values) / len(fps_values)) if fps_values else 0.0,
             gpu_load_percent=measure_gpu_load(),
         )
+
 
     def _control_loop(self) -> None:
         last_config = 0.0
