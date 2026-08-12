@@ -10,6 +10,7 @@ import pathlib
 
 import pytest
 
+from ._source_scan import code_text
 from app.ai.crop_transform import CropTransform
 from app.ai.open_vocab_paper_detector import (
     PAPER_PROMPT_CANDIDATES,
@@ -17,6 +18,7 @@ from app.ai.open_vocab_paper_detector import (
     OpenVocabPaperDetector,
     PaperPromptConfig,
     PaperPromptConfigError,
+    PROHIBITED_PROMPT_TERMS,
     parse_open_vocab_result,
 )
 from app.domain.paper_evidence import CANONICAL_PAPER_CLASS, PaperEvidenceStatus
@@ -372,16 +374,19 @@ def test_frame_metadata_can_be_attached_without_mutation() -> None:
 
 
 def test_module_never_falls_back_to_book_or_stock_classes() -> None:
-    source = MODULE_PATH.read_text(encoding="utf-8")
-    assert "coco" not in source.lower().replace("no coco fallback", "")
-    # 'book' appears only inside the prohibited-term list and prose.
-    for line in source.splitlines():
-        if '"book"' in line:
-            assert "PROHIBITED" in source  # declared as prohibited, never mapped
+    code = code_text(MODULE_PATH)
+    lowered = code.lower()
+    # No stock/COCO checkpoint or class list is referenced by executable code.
+    for forbidden in ("coco", "yolov8n.pt", "yolov8s.pt", "yolo11n.pt", "coco.yaml"):
+        assert forbidden not in lowered
+    # 'book' exists in code ONLY inside the prohibited-prompt set.
+    assert PROHIBITED_PROMPT_TERMS >= {"book", "notebook", "folder", "phone"}
+    assert '"book"' not in code.replace(str(sorted(PROHIBITED_PROMPT_TERMS)), "")
+    assert "paper" == CANONICAL_PAPER_CLASS
 
 
 def test_no_task_3d_or_event_imports() -> None:
-    source = MODULE_PATH.read_text(encoding="utf-8")
+    source = code_text(MODULE_PATH)
     for forbidden in (
         "handoff_temporal",
         "exchange_temporal",
@@ -391,7 +396,7 @@ def test_no_task_3d_or_event_imports() -> None:
     ):
         assert forbidden not in source
     lowered = source.lower()
-    for word in ("cheating", "handoff detected", "transfer detected"):
+    for word in ("cheating", "handoff", "transfer"):
         assert word not in lowered
 
 
@@ -408,12 +413,12 @@ def test_no_production_runtime_import_of_paper_detector() -> None:
     for path in app_dir.rglob("*.py"):
         if "paper" in path.name or "benchmark" in path.parts:
             continue
-        source = path.read_text(encoding="utf-8")
+        source = code_text(path)
         assert "open_vocab_paper_detector" not in source
         assert "paper_evidence" not in source
 
 
 def test_task1_and_pose_modules_untouched_by_paper_work() -> None:
     for name in ("detector.py", "tracker.py", "phone_rule_engine.py", "pose_provider.py"):
-        source = (AI_DIR / name).read_text(encoding="utf-8")
-        assert "paper" not in source.lower()
+        source = code_text(AI_DIR / name).lower()
+        assert "paper" not in source

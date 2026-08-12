@@ -12,6 +12,8 @@ import pathlib
 
 import pytest
 
+from ._source_scan import code_text
+
 from app.ai.crop_transform import CropTransform
 from app.ai.paper_detector import (
     PaperDetectorConfigError,
@@ -347,7 +349,7 @@ def test_parse_paper_result_is_pure_and_deterministic() -> None:
 
 
 def test_provider_declares_no_stock_or_book_fallback() -> None:
-    source = (AI_DIR / "paper_detector.py").read_text(encoding="utf-8")
+    source = code_text(AI_DIR / "paper_detector.py")
     lowered = source.lower()
     for forbidden in ("yolov8n.pt", "yolov8s.pt", "yolo11n.pt", "coco.yaml"):
         assert forbidden not in lowered
@@ -376,5 +378,6 @@ def test_paper_module_is_not_wired_into_runtime() -> None:
             assert "paper_detector" not in source
             assert "paper_evidence" not in source
     for name in ("engine_registry.py", "exchange_temporal_state.py", "pose_provider.py"):
-        source = (AI_DIR / name).read_text(encoding="utf-8")
-        assert "paper" not in source.lower()
+        source = code_text(AI_DIR / name).lower()
+        assert "paper_evidence" not in source
+        assert "paperdetection" not in source

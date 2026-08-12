@@ -9,7 +9,11 @@ from __future__ import annotations
 import dataclasses
 import math
 
+import pathlib
+
 import pytest
+
+from ._source_scan import code_text
 
 from app.domain.geometry import BBox
 from app.domain.paper_evidence import (
@@ -198,7 +202,15 @@ def test_detections_must_be_a_tuple_of_detections() -> None:
 
 def test_no_object_identity_or_fused_score_fields() -> None:
     fields = {field.name for field in dataclasses.fields(PaperDetection)}
-    assert fields == {"bbox", "confidence", "class_name", "model_name", "crop_source"}
+    assert fields == {
+        "bbox",
+        "confidence",
+        "class_name",
+        "model_name",
+        "crop_source",
+        "raw_prompt",
+        "backend",
+    }
     assert not any("track" in name or "id" == name for name in fields)
 
 
@@ -211,5 +223,8 @@ def test_domain_module_does_not_import_temporal_or_event_layers() -> None:
     ).read_text(encoding="utf-8")
     for forbidden in ("handoff_temporal", "exchange_temporal", "event", "notification"):
         assert f"import {forbidden}" not in source
-    assert "cheat" not in source.lower().replace("cheat sheet", "")
+    # Only prose may discuss what the layer refuses to claim; code must not.
+    assert "cheat" not in code_text(
+        pathlib.Path(__file__).resolve().parents[1] / "app" / "domain" / "paper_evidence.py"
+    ).lower()
     assert math.isfinite(1.0)  # sanity
