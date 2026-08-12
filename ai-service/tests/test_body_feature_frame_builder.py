@@ -16,6 +16,7 @@ from app.domain.pair_geometry import (
     TrackedBodyFeatureFrame,
 )
 from app.domain.pose import COCO_17_KEYPOINTS, PoseKeypointName, PoseStatus, coco_17_index
+from app.domain.pose_association import PoseMatchStatus
 from app.domain.regions import RelativePoint
 from app.domain.tracked_pose_observations import (
     TrackedPoseFrameResult,
@@ -125,7 +126,11 @@ def test_every_observation_becomes_one_body_subject() -> None:
 def test_unresolved_poses_are_counted_not_fabricated() -> None:
     frame = ok_frame(
         (observation("a", BBox(0.1, 0.1, 0.2, 0.4), {}),),
-        unresolved=(UnresolvedPoseDiagnostic(pose_index=1, reason="no_candidate"),),
+        unresolved=(UnresolvedPoseDiagnostic(
+                pose_index=1,
+                match_status=PoseMatchStatus.UNASSOCIATED,
+                reason="no_candidate",
+            ),),
     )
     result = build_body_feature_frame(frame)
     assert result.subject_count == 1

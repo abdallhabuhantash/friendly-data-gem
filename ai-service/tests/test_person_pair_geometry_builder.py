@@ -369,18 +369,27 @@ def test_center_distance_normalizations() -> None:
 
 
 def test_normalization_is_scale_equivalent() -> None:
-    small = pair_frame([person("a", 0.1), person("b", 0.5)]).pairs[0]
     big = build_person_pair_frame_from_tracked_pose(
         frame(
             [
-                ("a", BBox(0.1, 0.1, 0.4, 0.8), {}),
-                ("b", BBox(0.5, 0.1, 0.4, 0.8), {}),
+                ("a", BBox(0.1, 0.2, 0.2, 0.4), {}),
+                ("b", BBox(0.5, 0.2, 0.2, 0.4), {}),
             ]
         )
     ).pairs[0]
-    assert big.center_distance_relative_to_mean_person_diagonal == pytest.approx(
-        small.center_distance_relative_to_mean_person_diagonal
+    half = build_person_pair_frame_from_tracked_pose(
+        frame(
+            [
+                ("a", BBox(0.05, 0.1, 0.1, 0.2), {}),
+                ("b", BBox(0.25, 0.1, 0.1, 0.2), {}),
+            ]
+        )
+    ).pairs[0]
+    assert half.center_distance == pytest.approx(big.center_distance / 2.0)
+    assert half.center_distance_relative_to_mean_person_diagonal == pytest.approx(
+        big.center_distance_relative_to_mean_person_diagonal
     )
+    assert half.bbox_iou == pytest.approx(big.bbox_iou)
 
 
 def _projection(pair, tracking_id: str, side: BodySide):
