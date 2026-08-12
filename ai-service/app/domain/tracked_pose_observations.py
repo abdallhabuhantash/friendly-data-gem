@@ -238,6 +238,8 @@ class UnresolvedPoseDiagnostic:
     reason: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if not strict_index(self.pose_index):
+            raise TrackedPoseContractError("pose_index must be a non-negative int")
         if not isinstance(self.match_status, PoseMatchStatus):
             raise TrackedPoseContractError(f"unknown match status: {self.match_status!r}")
         if self.match_status is PoseMatchStatus.ASSOCIATED:
