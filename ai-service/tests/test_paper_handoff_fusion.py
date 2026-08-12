@@ -20,7 +20,15 @@ from app.ai.paper_pair_spatial_builder import build_paper_pair_spatial_frame
 from app.ai.person_pair_geometry_builder import build_person_pair_frame_from_tracked_pose
 from app.domain.body_features import BodySide
 from app.domain.geometry import BBox
-from app.domain.handoff_temporal import HandoffPhase, HandoffTemporalResult
+from app.domain.handoff_temporal import (
+    ABORT_APPROACH_LOST,
+    ABORT_APPROACH_TIMEOUT,
+    ABORT_EVIDENCE_GAP_EXCEEDED,
+    ABORT_INTERACTION_DWELL_TOO_SHORT,
+    RESET_RECOVERED,
+    HandoffPhase,
+    HandoffTemporalResult,
+)
 from app.domain.pair_geometry import PersonPairKey
 from app.domain.paper_evidence import PaperEvidenceFrame, PaperEvidenceStatus
 from app.domain.paper_handoff_fusion import (
@@ -654,3 +662,114 @@ def test_fusion_layer_is_not_wired_into_the_live_runtime() -> None:
         if path.name == "paper_handoff_fusion.py":
             continue
         assert "paper_handoff_fusion" not in path.read_text()
+
+
+# ------------------------------------------------- Task 3D lifecycle cleanup
+
+
+TERMINAL_REASONS = (
+    ABORT_EVIDENCE_GAP_EXCEEDED,
+    ABORT_APPROACH_LOST,
+    ABORT_APPROACH_TIMEOUT,
+    ABORT_INTERACTION_DWELL_TOO_SHORT,
+    RESET_RECOVERED,
+)
+
+
+def terminal_frame(tracker, reason: str, *, step: int, detections=(NEAR_PAPER,)):
+    """One frame whose authoritative Task 3D result carries a terminal reason."""
+    moment = at(step * 0.3)
+    sequence = 100 + step
+    result = dataclasses.replace(
+        temporal(observed_at=moment), abort_reason=reason
+    )
+    frame = spatial(detections, sequence=sequence, observed_at=moment, paper_index=step)
+    return tracker.observe(
+        temporal=result,
+        spatial_frame=frame,
+        join=join_for(result, sequence, moment),
+        armed=True,
+        spec=SPEC,
+    )
+
+
+@pytest.mark.parametrize("reason", TERMINAL_REASONS)
+def test_terminal_temporal_reason_discards_fusion_state(reason) -> None:
+    tracker = PaperHandoffFusionTracker()
+    for step in range(3):
+        run(tracker, (NEAR_PAPER,), step=step)
+    assert tracker.active_candidate_count == 1
+    ended = terminal_frame(tracker, reason, step=3)
+    assert ended.status is PaperHandoffFusionStatus.OK
+    assert ended.reason == reason
+    assert ended.fused_completed_this_frame is False
+    assert ended.support_qualified_this_frame is False
+    assert ended.paper_support_status is PaperSupportStatus.UNKNOWN
+    assert tracker.active_candidate_count == 0
+
+
+@pytest.mark.parametrize("reason", TERMINAL_REASONS)
+def test_terminal_frame_itself_adds_no_paper_dwell(reason) -> None:
+    tracker = PaperHandoffFusionTracker()
+    run(tracker, (NEAR_PAPER,), step=0)
+    run(tracker, (NEAR_PAPER,), step=1)
+    ended = terminal_frame(tracker, reason, step=2)
+    assert ended.observed_total_paper_seconds == pytest.approx(0.0)
+    assert ended.observed_interaction_paper_seconds == pytest.approx(0.0)
+
+
+def test_new_candidate_after_abort_starts_with_zero_paper_support() -> None:
+    tracker = PaperHandoffFusionTracker()
+    for step in range(3):
+        run(tracker, (NEAR_PAPER,), step=step)
+    terminal_frame(tracker, ABORT_APPROACH_LOST, step=3)
+    fresh = run(tracker, (NEAR_PAPER,), step=4, started_at=at(1.5))
+    assert fresh.observed_total_paper_seconds == pytest.approx(0.0)
+    assert fresh.observed_interaction_paper_seconds == pytest.approx(0.0)
+    closed = run(tracker, (NEAR_PAPER,), step=5, completed=True, started_at=at(1.5))
+    assert closed.fused_completed_this_frame is False
+
+
+def test_terminated_candidate_evidence_cannot_be_reused_for_completion() -> None:
+    tracker = PaperHandoffFusionTracker()
+    for step in range(3):
+        run(tracker, (NEAR_PAPER,), step=step)
+    terminal_frame(tracker, ABORT_EVIDENCE_GAP_EXCEEDED, step=3)
+    revived = run(tracker, (NEAR_PAPER,), step=4, completed=True)
+    assert revived.fused_completed_this_frame is False
+    assert revived.observed_total_paper_seconds == pytest.approx(0.0)
+
+
+def test_terminal_frame_clears_frame_order_state() -> None:
+    tracker = PaperHandoffFusionTracker()
+    run(tracker, (NEAR_PAPER,), step=5)
+    terminal_frame(tracker, ABORT_APPROACH_TIMEOUT, step=6)
+    # Order state was discarded with the candidate, so a lower sequence from the
+    # next candidate is accepted instead of being read as out-of-order.
+    resumed = run(tracker, (NEAR_PAPER,), step=1, started_at=at(1.0))
+    assert resumed.status is PaperHandoffFusionStatus.OK
+
+
+def test_new_generation_retires_stale_generation_state() -> None:
+    tracker = PaperHandoffFusionTracker()
+    for step in range(3):
+        run(tracker, (NEAR_PAPER,), step=step, generation=4)
+    assert tracker.active_candidate_count == 1
+    fresh = run(tracker, (NEAR_PAPER,), step=0, generation=5)
+    assert fresh.observed_total_paper_seconds == pytest.approx(0.0)
+    # Generation 4 fusion state was retired, not merely isolated.
+    assert tracker.active_candidate_count == 1
+
+
+def test_generation_retirement_leaves_other_cameras_and_rules_untouched() -> None:
+    tracker = PaperHandoffFusionTracker()
+    run(tracker, (NEAR_PAPER,), step=0, generation=4)
+    run(tracker, (NEAR_PAPER,), step=0, generation=4, camera_id="cam-2")
+    run(tracker, (NEAR_PAPER,), step=0, generation=4, rule_id="rule-other")
+    assert tracker.active_candidate_count == 3
+    run(tracker, (NEAR_PAPER,), step=1, generation=5)
+    assert tracker.active_candidate_count == 3
+    survivor = run(
+        tracker, (NEAR_PAPER,), step=1, generation=4, camera_id="cam-2"
+    )
+    assert survivor.observed_total_paper_seconds == pytest.approx(0.3)
