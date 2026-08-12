@@ -174,6 +174,7 @@ def _pair_geometry(
             wrist = _available_wrist(owner, side)
             if wrist is None:
                 continue
+            # Reuse the authoritative person-relative geometry contract from Task 2C.
             # Authoritative, single geometry policy (validation + MIN_PERSON_EXTENT
             # + unclamped relative coordinates) lives in region_resolver.
             relative = relative_point(
