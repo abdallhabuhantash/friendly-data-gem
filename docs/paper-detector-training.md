@@ -20,7 +20,7 @@ loose exam sheet. Using any of them as a stand-in would produce detections that
 are literally false: a system that reports "paper" when the model actually
 recognised "book" is lying about its evidence.
 
-## 2. Why `book` is not paper
+## 2. Why book is not paper
 
 A book/notebook is a bound, multi-page, thick object with a spine. A loose sheet
 is thin, flexible, often bright, frequently folded and usually handled very
