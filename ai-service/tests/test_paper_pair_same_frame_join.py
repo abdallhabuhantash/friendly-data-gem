@@ -164,7 +164,7 @@ def test_pair_side_clock_may_be_left_undeclared() -> None:
 
 
 def test_unusable_person_a_geometry_fails_whole_frame() -> None:
-    people = [person("a", 0.1, width=1e-6), person("b", 0.6)]
+    people = [person("a", 0.1, box=BBox(0.1, 0.2, 5e-5, 0.4)), person("b", 0.6)]
     result = build_paper_pair_spatial_frame(pair_frame(people), papers(), JOIN)
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
     assert result.reason == "person_geometry_unusable"
@@ -172,7 +172,7 @@ def test_unusable_person_a_geometry_fails_whole_frame() -> None:
 
 
 def test_unusable_person_b_geometry_fails_whole_frame() -> None:
-    people = [person("a", 0.1), person("b", 0.6, width=1e-6)]
+    people = [person("a", 0.1), person("b", 0.6, box=BBox(0.6, 0.2, 5e-5, 0.4))]
     result = build_paper_pair_spatial_frame(pair_frame(people), papers(), JOIN)
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
     assert result.reason == "person_geometry_unusable"
@@ -183,7 +183,7 @@ def test_no_partial_facts_when_a_later_pair_is_unusable() -> None:
     people = [
         person("a", 0.1),
         person("b", 0.4),
-        person("c", 0.7, width=1e-6),
+        person("c", 0.7, box=BBox(0.7, 0.2, 5e-5, 0.4)),
     ]
     result = build_paper_pair_spatial_frame(pair_frame(people), papers(), JOIN)
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
