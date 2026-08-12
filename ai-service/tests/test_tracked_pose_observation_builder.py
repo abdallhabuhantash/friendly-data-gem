@@ -60,7 +60,7 @@ def observations(*persons: PersonObservation) -> FrameObservations:
         persons=persons,
         frame_sequence=42,
         observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        source_mode=SourceMode.RTSP if hasattr(SourceMode, "RTSP") else list(SourceMode)[0],
+        source_mode="live",
     )
 
 
