@@ -35,10 +35,12 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, get_args
 
 from .geometry import BBox
 from .models import SourceMode
+
+SOURCE_MODES: frozenset[str] = frozenset(get_args(SourceMode))
 from .pose import (
     COCO_17_INDEX_BY_NAME,
     COCO_17_KEYPOINT_COUNT,
@@ -64,6 +66,11 @@ def _finite(value: object) -> bool:
 
 def _unit(value: object) -> bool:
     return _finite(value) and 0.0 <= float(value) <= 1.0
+
+
+def strict_index(value: object) -> bool:
+    """True only for a REAL non-negative ``int`` (``bool`` is never an index)."""
+    return type(value) is int and value >= 0
 
 
 class TrackedPoseFrameStatus(str, Enum):
@@ -121,6 +128,16 @@ class TrackedPoseKeypoint:
                     f"{self.name.value} is available but carries no resolved "
                     "person-relative position"
                 )
+            if type(self.inside_person) is not bool:
+                raise TrackedPoseContractError(
+                    f"{self.name.value} inside_person must be a real bool"
+                )
+            if not isinstance(self.relative_position, RelativePoint):
+                raise TrackedPoseContractError("relative_position must be a RelativePoint")
+            if self.inside_person is not self.relative_position.inside_person:
+                raise TrackedPoseContractError(
+                    f"{self.name.value} inside_person contradicts its relative position"
+                )
         else:
             if self.x is not None or self.y is not None:
                 raise TrackedPoseContractError(
@@ -162,7 +179,7 @@ class TrackedPoseObservation:
             ("person_index", self.person_index),
             ("pose_index", self.pose_index),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            if not strict_index(value):
                 raise TrackedPoseContractError(f"{label} must be a non-negative int")
         for label, box in (("person_bbox", self.person_bbox), ("pose_bbox", self.pose_bbox)):
             if not isinstance(box, BBox):
@@ -223,6 +240,8 @@ class UnresolvedPoseDiagnostic:
     reason: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if not strict_index(self.pose_index):
+            raise TrackedPoseContractError("pose_index must be a non-negative int")
         if not isinstance(self.match_status, PoseMatchStatus):
             raise TrackedPoseContractError(f"unknown match status: {self.match_status!r}")
         if self.match_status is PoseMatchStatus.ASSOCIATED:
@@ -271,10 +290,29 @@ class TrackedPoseFrameResult:
                 raise TrackedPoseContractError(
                     "unresolved must be UnresolvedPoseDiagnostic values"
                 )
-        if self.status is not TrackedPoseFrameStatus.OK and self.observations:
+        if self.status is not TrackedPoseFrameStatus.OK and (
+            self.observations or self.unresolved
+        ):
             raise TrackedPoseContractError(
-                f"degraded tracked-pose frame ({self.status.value}) must carry no observations"
+                f"degraded tracked-pose frame ({self.status.value}) must carry no "
+                "observations or unresolved diagnostics"
             )
+        if not strict_index(self.pose_instance_count):
+            raise TrackedPoseContractError("pose_instance_count must be a non-negative int")
+        if self.camera_id is not None and (
+            not isinstance(self.camera_id, str) or not self.camera_id.strip()
+        ):
+            raise TrackedPoseContractError("camera_id must be a non-blank string")
+        if self.frame_sequence is not None and not strict_index(self.frame_sequence):
+            raise TrackedPoseContractError("frame_sequence must be a non-negative int")
+        if self.observed_at is not None and not isinstance(self.observed_at, datetime):
+            raise TrackedPoseContractError("observed_at must be a datetime")
+        if self.source_mode is not None and self.source_mode not in SOURCE_MODES:
+            raise TrackedPoseContractError("source_mode must be a valid SourceMode")
+        if self.source_pose_status is not None and not isinstance(
+            self.source_pose_status, PoseStatus
+        ):
+            raise TrackedPoseContractError("source_pose_status must be a valid PoseStatus")
         seen_persons: set[int] = set()
         seen_tracks: set[str] = set()
         seen_poses: set[int] = set()
@@ -288,6 +326,23 @@ class TrackedPoseFrameResult:
             seen_persons.add(observation.person_index)
             seen_tracks.add(observation.person_tracking_id)
             seen_poses.add(observation.pose_index)
+
+        if self.status is TrackedPoseFrameStatus.OK:
+            unresolved_poses: set[int] = set()
+            for diagnostic in self.unresolved:
+                if diagnostic.pose_index in unresolved_poses:
+                    raise TrackedPoseContractError(
+                        "duplicate pose_index in unresolved diagnostics"
+                    )
+                if diagnostic.pose_index in seen_poses:
+                    raise TrackedPoseContractError(
+                        "a pose cannot be both resolved and unresolved"
+                    )
+                unresolved_poses.add(diagnostic.pose_index)
+            if seen_poses | unresolved_poses != set(range(self.pose_instance_count)):
+                raise TrackedPoseContractError(
+                    "an ok tracked-pose frame must account for every source pose exactly once"
+                )
 
     @property
     def ok(self) -> bool:

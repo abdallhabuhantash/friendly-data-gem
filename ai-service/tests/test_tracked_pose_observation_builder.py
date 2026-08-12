@@ -60,7 +60,7 @@ def observations(*persons: PersonObservation) -> FrameObservations:
         persons=persons,
         frame_sequence=42,
         observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        source_mode=SourceMode.RTSP if hasattr(SourceMode, "RTSP") else list(SourceMode)[0],
+        source_mode="live",
     )
 
 
@@ -499,3 +499,181 @@ def test_unresolved_diagnostic_rejects_associated_status():
         from app.domain.tracked_pose_observations import UnresolvedPoseDiagnostic
 
         UnresolvedPoseDiagnostic(pose_index=0, match_status=PoseMatchStatus.ASSOCIATED)
+
+
+# --- 2D-D hardening: strict indices ------------------------------------
+
+
+def _match(pose_index, person_index=0, status=PoseMatchStatus.ASSOCIATED, track="24"):
+    return PoseMatch(
+        pose_index=pose_index,
+        status=status,
+        person_tracking_id=track,
+        person_index=person_index,
+    )
+
+
+@pytest.mark.parametrize("bad", [True, False, 0.0, "0", -1])
+def test_malformed_pose_index_is_inconsistent(bad):
+    pose_result, _assoc, frame = simple_frame()
+    result = build(pose_result, association(_match(bad)), frame)
+    assert result.status is TrackedPoseFrameStatus.INCONSISTENT_INPUT
+    assert result.observations == ()
+
+
+@pytest.mark.parametrize("bad", [True, False, 0.0, "0", -1])
+def test_malformed_person_index_is_inconsistent(bad):
+    pose_result, _assoc, frame = simple_frame()
+    result = build(pose_result, association(_match(0, person_index=bad)), frame)
+    assert result.status is TrackedPoseFrameStatus.INCONSISTENT_INPUT
+    assert result.observations == ()
+
+
+def test_malformed_unresolved_match_index_is_inconsistent():
+    pose_result, _assoc, frame = simple_frame()
+    bad = PoseMatch(pose_index=True, status=PoseMatchStatus.UNASSOCIATED)
+    result = build(pose_result, association(bad), frame)
+    assert result.status is TrackedPoseFrameStatus.INCONSISTENT_INPUT
+
+
+# --- 2D-D hardening: inside_person invariant --------------------------
+
+
+def _kp(**kwargs):
+    from app.domain.tracked_pose_observations import TrackedPoseKeypoint
+
+    base = dict(
+        name=PoseKeypointName.NOSE,
+        index=coco_17_index(PoseKeypointName.NOSE),
+        available=True,
+        confidence=0.5,
+        x=0.3,
+        y=0.3,
+    )
+    base.update(kwargs)
+    return TrackedPoseKeypoint(**base)
+
+
+@pytest.mark.parametrize("bad", [1, "yes"])
+def test_inside_person_must_be_real_bool(bad):
+    from app.domain.regions import RelativePoint
+
+    with pytest.raises(TrackedPoseContractError):
+        _kp(relative_position=RelativePoint(0.5, 0.5), inside_person=bad)
+
+
+def test_inside_person_must_agree_with_relative_point():
+    from app.domain.regions import RelativePoint
+
+    with pytest.raises(TrackedPoseContractError):
+        _kp(relative_position=RelativePoint(1.5, 0.5), inside_person=True)
+    with pytest.raises(TrackedPoseContractError):
+        _kp(relative_position=RelativePoint(0.5, 0.5), inside_person=False)
+    assert _kp(relative_position=RelativePoint(0.5, 0.5), inside_person=True).inside_person
+
+
+# --- 2D-D hardening: diagnostics + frame coverage ---------------------
+
+
+def _diag(pose_index):
+    from app.domain.tracked_pose_observations import UnresolvedPoseDiagnostic
+
+    return UnresolvedPoseDiagnostic(
+        pose_index=pose_index, match_status=PoseMatchStatus.UNASSOCIATED
+    )
+
+
+@pytest.mark.parametrize("bad", [True, False, -1, 0.0, "0"])
+def test_unresolved_diagnostic_rejects_malformed_index(bad):
+    with pytest.raises(TrackedPoseContractError):
+        _diag(bad)
+
+
+def _ok_frame(**kwargs):
+    from app.domain.tracked_pose_observations import TrackedPoseFrameResult
+
+    base = dict(
+        status=TrackedPoseFrameStatus.OK,
+        camera_id="cam-a",
+        source_pose_status=PoseStatus.OK,
+        pose_instance_count=0,
+    )
+    base.update(kwargs)
+    return TrackedPoseFrameResult(**base)
+
+
+@pytest.mark.parametrize("bad", [True, False, -1, 1.0])
+def test_pose_instance_count_must_be_strict_index(bad):
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(pose_instance_count=bad)
+
+
+def test_ok_frame_requires_exact_pose_coverage():
+    observation = build(*simple_frame()).observations[0]
+    # resolved 0 + unresolved 1 covers both source poses.
+    assert _ok_frame(
+        observations=(observation,), unresolved=(_diag(1),), pose_instance_count=2
+    ).ok
+    # missing pose index 1
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(observations=(observation,), pose_instance_count=2)
+    # same pose both resolved and unresolved
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(observations=(observation,), unresolved=(_diag(0),), pose_instance_count=1)
+    # out-of-range diagnostic index
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(observations=(observation,), unresolved=(_diag(5),), pose_instance_count=2)
+    # duplicate diagnostics
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(unresolved=(_diag(0), _diag(0)), pose_instance_count=1)
+    # empty frame stays valid
+    assert _ok_frame().ok
+
+
+def test_degraded_frame_must_not_carry_unresolved_diagnostics():
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(
+            status=TrackedPoseFrameStatus.POSE_UNAVAILABLE,
+            unresolved=(_diag(0),),
+            pose_instance_count=1,
+        )
+
+
+# --- 2D-D hardening: provenance + metadata ----------------------------
+
+
+def test_ok_association_without_source_pose_status_is_inconsistent():
+    pose_result, assoc, frame = simple_frame()
+    assoc = PoseAssociationFrameResult(
+        status=PoseAssociationFrameStatus.OK,
+        matches=assoc.matches,
+        source_pose_status=None,
+    )
+    result = build(pose_result, assoc, frame)
+    assert result.status is TrackedPoseFrameStatus.INCONSISTENT_INPUT
+    assert result.observations == ()
+
+
+def test_explicit_ok_provenance_still_succeeds():
+    result = build(*simple_frame())
+    assert result.status is TrackedPoseFrameStatus.OK
+    assert result.source_pose_status is PoseStatus.OK
+
+
+@pytest.mark.parametrize("bad", ["", "   "])
+def test_blank_camera_id_rejected(bad):
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(camera_id=bad)
+
+
+@pytest.mark.parametrize("bad", [True, -1, 1.5, "3"])
+def test_invalid_frame_sequence_rejected(bad):
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(frame_sequence=bad)
+
+
+def test_invalid_observed_at_and_source_mode_rejected():
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(observed_at="2026-01-01")
+    with pytest.raises(TrackedPoseContractError):
+        _ok_frame(source_mode="bogus-mode")
