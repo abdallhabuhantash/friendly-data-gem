@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import math
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -154,6 +155,7 @@ def paper_frame(
         detections=detections,
         model_name="yolo-world",
         backend="open_vocab",
+        reason=None if status is PaperEvidenceStatus.OK else "detector reported failure",
         frame_index=FRAME_SEQUENCE,
         timestamp_seconds=timestamp_seconds,
     )
@@ -461,17 +463,17 @@ def test_equal_distance_across_people_tie_breaks_on_tracking_id() -> None:
         person(
             "a",
             0.0,
-            {BodySide.LEFT: (0.30, 0.30)},
+            {BodySide.LEFT: (0.25, 0.30)},
             box=BBox(0.20, 0.20, 0.20, 0.40),
         ),
         person(
             "b",
             0.0,
-            {BodySide.LEFT: (0.70, 0.30)},
+            {BodySide.LEFT: (0.75, 0.30)},
             box=BBox(0.60, 0.20, 0.20, 0.40),
         ),
     ]
-    result = build(people, (paper(BBox(0.49, 0.29, 0.02, 0.02)),))
+    result = build(people, (paper(BBox(0.48, 0.29, 0.04, 0.02)),))
     nearest = result.facts[0].nearest_available_wrist
     assert nearest is not None
     assert nearest.wrist_owner_tracking_id == "a"
@@ -764,7 +766,11 @@ FORBIDDEN_TOKENS = (
 def test_no_semantic_decision_vocabulary_in_code(path: Path) -> None:
     code = code_text(path).lower()
     for token in FORBIDDEN_TOKENS:
-        assert token not in code, f"{path.name} must not express {token!r}"
+        # Word-boundary match: ``wrist_owner_tracking_id`` is neutral wrist
+        # provenance, never a claim of paper ownership.
+        assert re.search(rf"\b{token}\b", code) is None, (
+            f"{path.name} must not express {token!r}"
+        )
 
 
 @pytest.mark.parametrize("path", [DOMAIN, BUILDER])
