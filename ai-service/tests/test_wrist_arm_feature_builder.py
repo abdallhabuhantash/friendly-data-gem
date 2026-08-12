@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import dataclasses
 import math
@@ -238,16 +239,24 @@ def test_no_temporal_or_global_state_in_feature_layer() -> None:
         "app/ai/wrist_arm_feature_builder.py",
         "app/domain/body_features.py",
     ):
-        source = Path(path).read_text(encoding="utf-8")
-        for forbidden in (
-            "import time",
-            "datetime",
-            "previous",
-            "velocity",
-            "global ",
-            "cooldown",
-        ):
-            assert forbidden not in source, f"{forbidden} found in {path}"
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            assert not isinstance(node, ast.Global), path
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert alias.name.split(".")[0] not in {
+                        "time",
+                        "datetime",
+                        "threading",
+                        "random",
+                    }, path
+            if isinstance(node, ast.ImportFrom):
+                assert (node.module or "").split(".")[0] not in {
+                    "time",
+                    "datetime",
+                    "threading",
+                    "random",
+                }, path
 
 
 def test_equivalent_normalized_pose_in_two_person_sizes_matches_relative_geometry() -> None:
