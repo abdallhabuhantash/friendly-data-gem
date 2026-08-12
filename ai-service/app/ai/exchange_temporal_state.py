@@ -559,14 +559,10 @@ class HandoffTemporalTracker:
         abort_reason: Optional[str] = None,
     ) -> HandoffTemporalResult:
         camera_id, generation, rule_id, pair_key = key
-        separation_duration = (
-            0.0
-            if candidate.separation_started_at is None
-            else _seconds(
-                candidate.completed_at or candidate.last_valid_evidence_at,
-                candidate.separation_started_at,
-            )
-        )
+        # Raw calibration facts are genuinely OBSERVED accumulated durations,
+        # never wall time spanning tolerated UNKNOWN intervals.
+        separation_duration = candidate.separation_duration
+
         return HandoffTemporalResult(
             camera_id=camera_id,
             stream_generation=generation,
