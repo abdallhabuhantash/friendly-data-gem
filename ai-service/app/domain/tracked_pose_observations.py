@@ -288,10 +288,29 @@ class TrackedPoseFrameResult:
                 raise TrackedPoseContractError(
                     "unresolved must be UnresolvedPoseDiagnostic values"
                 )
-        if self.status is not TrackedPoseFrameStatus.OK and self.observations:
+        if self.status is not TrackedPoseFrameStatus.OK and (
+            self.observations or self.unresolved
+        ):
             raise TrackedPoseContractError(
-                f"degraded tracked-pose frame ({self.status.value}) must carry no observations"
+                f"degraded tracked-pose frame ({self.status.value}) must carry no "
+                "observations or unresolved diagnostics"
             )
+        if not strict_index(self.pose_instance_count):
+            raise TrackedPoseContractError("pose_instance_count must be a non-negative int")
+        if self.camera_id is not None and (
+            not isinstance(self.camera_id, str) or not self.camera_id.strip()
+        ):
+            raise TrackedPoseContractError("camera_id must be a non-blank string")
+        if self.frame_sequence is not None and not strict_index(self.frame_sequence):
+            raise TrackedPoseContractError("frame_sequence must be a non-negative int")
+        if self.observed_at is not None and not isinstance(self.observed_at, datetime):
+            raise TrackedPoseContractError("observed_at must be a datetime")
+        if self.source_mode is not None and not isinstance(self.source_mode, SourceMode):
+            raise TrackedPoseContractError("source_mode must be a valid SourceMode")
+        if self.source_pose_status is not None and not isinstance(
+            self.source_pose_status, PoseStatus
+        ):
+            raise TrackedPoseContractError("source_pose_status must be a valid PoseStatus")
         seen_persons: set[int] = set()
         seen_tracks: set[str] = set()
         seen_poses: set[int] = set()
