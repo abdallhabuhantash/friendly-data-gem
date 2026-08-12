@@ -246,6 +246,7 @@ class PaperHandoffFusionTracker:
             and other[1] != join.stream_generation
         )
 
+        # Terminal Task 3D lifecycle outcomes retire candidate-local fusion state.
         # --- Task 3D abort/reset is authoritative -----------------------------
         # A terminal Task 3D reason ends that exact temporal candidate. The
         # terminal frame itself may never add paper dwell, and no paper evidence
