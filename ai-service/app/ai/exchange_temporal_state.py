@@ -231,6 +231,8 @@ class HandoffTemporalTracker:
         )
 
         results: list[HandoffTemporalResult] = []
+        #: Keys already processed this frame never restart in the same frame.
+        processed: set[PersonPairKey] = set()
 
         # --- existing candidates --------------------------------------------
         for key in [key for key in self._candidates if key[:3] == context]:
@@ -243,6 +245,7 @@ class HandoffTemporalTracker:
                 key, candidate, evidence, now=now, spec=spec, degraded=degraded
             )
             results.append(result)
+            processed.add(key[3])
 
         # --- new candidates -------------------------------------------------
         if not degraded:
@@ -250,7 +253,7 @@ class HandoffTemporalTracker:
                 pairs, key=lambda item: item.tracking_ids
             ):
                 key = (camera_id, generation, rule_id, pair_key)
-                if key in self._candidates:
+                if key in self._candidates or pair_key in processed:
                     continue
                 started = self._maybe_start(pairs[pair_key], now=now, spec=spec)
                 if started is None:
@@ -409,7 +412,7 @@ class HandoffTemporalTracker:
                     abort_reason=ABORT_APPROACH_LOST,
                 )
 
-        elif candidate.phase is HandoffPhase.INTERACTION:
+        if candidate.phase is HandoffPhase.INTERACTION:
             candidate.closest_distance = min(candidate.closest_distance, distance)
             if distance <= spec.interaction_wrist_distance:
                 candidate.interaction_last_at = now
@@ -428,7 +431,7 @@ class HandoffTemporalTracker:
                     abort_reason=ABORT_INTERACTION_DWELL_TOO_SHORT,
                 )
 
-        elif candidate.phase is HandoffPhase.SEPARATING:
+        if candidate.phase is HandoffPhase.SEPARATING:
             candidate.separation_max_distance = max(
                 candidate.separation_max_distance, distance
             )
@@ -455,7 +458,7 @@ class HandoffTemporalTracker:
                     candidate.phase = HandoffPhase.INTERACTION
                     candidate.interaction_last_at = now
 
-        elif candidate.phase is HandoffPhase.COMPLETED:
+        if candidate.phase is HandoffPhase.COMPLETED and not completed_now:
             # Latched: a completion is reported EXACTLY ONCE. This is
             # state-machine duplicate prevention, not alert cooldown.
             if distance >= spec.recovery_wrist_distance:
