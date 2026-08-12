@@ -44,13 +44,17 @@ from tests._source_scan import code_text
 
 OBSERVED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 CAMERA_ID = "cam-1"
-FRAME_SEQUENCE = 3
+# Deliberately DIFFERENT counters from two independent pipelines: the explicit
+# join declares that pair sequence 210 and paper index 7 are the same image.
+FRAME_SEQUENCE = 210
+PAPER_FRAME_INDEX = 7
 
 JOIN = SameFrameJoin(
     camera_id=CAMERA_ID,
-    frame_sequence=FRAME_SEQUENCE,
-    timestamp_seconds=1.5,
-    observed_at=OBSERVED_AT,
+    pair_frame_sequence=FRAME_SEQUENCE,
+    paper_frame_index=PAPER_FRAME_INDEX,
+    paper_timestamp_seconds=1.5,
+    pair_observed_at=OBSERVED_AT,
 )
 
 
@@ -156,7 +160,7 @@ def paper_frame(
         model_name="yolo-world",
         backend="open_vocab",
         reason=None if status is PaperEvidenceStatus.OK else "detector reported failure",
-        frame_index=FRAME_SEQUENCE,
+        frame_index=PAPER_FRAME_INDEX,
         timestamp_seconds=timestamp_seconds,
     )
 
@@ -557,26 +561,28 @@ def test_same_frame_inputs_succeed() -> None:
     result = build([person("a", 0.1), person("b", 0.6)])
     assert result.status is PaperPairSpatialStatus.OK
     assert result.camera_id == CAMERA_ID
-    assert result.frame_sequence == FRAME_SEQUENCE
-    assert result.timestamp_seconds == pytest.approx(1.5)
+    assert result.pair_frame_sequence == FRAME_SEQUENCE
+    assert result.paper_frame_index == PAPER_FRAME_INDEX
+    assert result.paper_timestamp_seconds == pytest.approx(1.5)
+    assert result.pair_observed_at == OBSERVED_AT
 
 
 def test_mismatched_frame_sequence_rejected() -> None:
     result = build_paper_pair_spatial_frame(
         pair_frame([person("a", 0.1), person("b", 0.6)]),
         paper_frame((paper(BBox(0.4, 0.3, 0.04, 0.04)),)),
-        dataclasses.replace(JOIN, frame_sequence=99),
+        dataclasses.replace(JOIN, pair_frame_sequence=99),
     )
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
     assert result.facts == ()
-    assert result.reason == "frame_sequence_mismatch"
+    assert result.reason == "pair_frame_sequence_mismatch"
 
 
 def test_mismatched_paper_frame_index_rejected() -> None:
     papers = PaperEvidenceFrame(
         status=PaperEvidenceStatus.OK,
         detections=(paper(BBox(0.4, 0.3, 0.04, 0.04)),),
-        frame_index=FRAME_SEQUENCE + 1,
+        frame_index=PAPER_FRAME_INDEX + 1,
         timestamp_seconds=1.5,
     )
     result = build_paper_pair_spatial_frame(
@@ -603,14 +609,18 @@ def test_timestamp_disagreement_rejected() -> None:
         JOIN,
     )
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
-    assert result.reason == "timestamp_disagreement"
+    assert result.reason == "paper_timestamp_disagreement"
 
 
 def test_paper_timestamp_without_declared_join_timestamp_rejected() -> None:
     result = build_paper_pair_spatial_frame(
         pair_frame([person("a", 0.1), person("b", 0.6)]),
         paper_frame(timestamp_seconds=1.5),
-        SameFrameJoin(camera_id=CAMERA_ID, frame_sequence=FRAME_SEQUENCE),
+        SameFrameJoin(
+            camera_id=CAMERA_ID,
+            pair_frame_sequence=FRAME_SEQUENCE,
+            paper_frame_index=PAPER_FRAME_INDEX,
+        ),
     )
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
     assert result.reason == "paper_timestamp_without_declared_join_timestamp"
@@ -620,7 +630,7 @@ def test_timestamp_within_explicit_tolerance_is_accepted() -> None:
     result = build_paper_pair_spatial_frame(
         pair_frame([person("a", 0.1), person("b", 0.6)]),
         paper_frame(timestamp_seconds=1.52),
-        dataclasses.replace(JOIN, timestamp_tolerance_seconds=0.05),
+        dataclasses.replace(JOIN, paper_timestamp_tolerance_seconds=0.05),
     )
     assert result.status is PaperPairSpatialStatus.OK
 
@@ -630,11 +640,11 @@ def test_observed_at_disagreement_rejected() -> None:
         pair_frame([person("a", 0.1), person("b", 0.6)]),
         paper_frame(),
         dataclasses.replace(
-            JOIN, observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc)
+            JOIN, pair_observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc)
         ),
     )
     assert result.status is PaperPairSpatialStatus.INCONSISTENT_INPUT
-    assert result.reason == "observed_at_mismatch"
+    assert result.reason == "pair_observed_at_mismatch"
 
 
 def test_join_must_be_explicit() -> None:
