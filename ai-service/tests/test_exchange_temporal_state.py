@@ -180,11 +180,11 @@ def gap_frame(
     ids: tuple[str, str] = ("a", "b"),
 ):
     """One two-person frame whose locked wrist gap equals ``relative``."""
-    ax = 0.28
+    half = dx_for(relative) / 2.0
     return frame(
         [
-            (ids[0], {sides[0]: (ax, 0.4)}),
-            (ids[1], {sides[1]: (ax + dx_for(relative), 0.4)}),
+            (ids[0], {sides[0]: (0.5 - half, 0.4)}),
+            (ids[1], {sides[1]: (0.5 + half, 0.4)}),
         ],
         sequence=sequence,
         observed_at=observed_at,
@@ -508,7 +508,7 @@ def test_pairs_are_independent() -> None:
     people = [
         ("a", {BodySide.RIGHT: (ax, 0.4)}),
         ("b", {BodySide.LEFT: (ax + dx_for(0.8), 0.4)}),
-        ("c", {BodySide.LEFT: (ax + dx_for(3.0), 0.4)}),
+        ("c", {BodySide.LEFT: (ax + dx_for(2.0), 0.4)}),
     ]
     result = observe(tracker, frame(people, sequence=1, observed_at=at(0)))
     keys = {candidate.pair_key for candidate in result.candidates}
