@@ -624,6 +624,10 @@ def test_nothing_in_the_live_runtime_imports_task_3c() -> None:
             "pair_geometry.py",
             "person_pair_geometry_builder.py",
             "body_feature_frame_builder.py",
+            # Task 3D consumes Task 3C as its authoritative same-frame input and
+            # is itself dormant (no runtime, event or notification coupling).
+            "handoff_temporal.py",
+            "exchange_temporal_state.py",
         }:
             continue
         source = path.read_text()
