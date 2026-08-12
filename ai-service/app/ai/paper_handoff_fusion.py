@@ -27,7 +27,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from app.domain.handoff_temporal import HandoffPhase, HandoffTemporalResult
+from app.domain.handoff_temporal import (
+    ABORT_APPROACH_LOST,
+    ABORT_APPROACH_TIMEOUT,
+    ABORT_EVIDENCE_GAP_EXCEEDED,
+    ABORT_INTERACTION_DWELL_TOO_SHORT,
+    RESET_DISARMED as TEMPORAL_RESET_DISARMED,
+    RESET_NON_MONOTONIC as TEMPORAL_RESET_NON_MONOTONIC,
+    RESET_RECOVERED,
+    HandoffPhase,
+    HandoffTemporalResult,
+)
 from app.domain.pair_geometry import PersonPairKey
 from app.domain.paper_handoff_fusion import (
     ABORT_PAPER_UNKNOWN_GAP_EXCEEDED,
@@ -54,6 +64,21 @@ from app.domain.paper_pair_spatial import (
 #: Full fusion state identity. A change in ANY member is different state:
 #: cameras, stream incarnations, rules and pairs never share or migrate state.
 StateKey = tuple[str, object, str, PersonPairKey]
+
+#: Task 3D reasons that TERMINATE that exact temporal candidate. Task 3D remains
+#: authoritative for the lifecycle: this layer only mirrors it and never decides
+#: on its own that a candidate ended.
+TERMINAL_TEMPORAL_REASONS: frozenset[str] = frozenset(
+    {
+        ABORT_EVIDENCE_GAP_EXCEEDED,
+        ABORT_APPROACH_LOST,
+        ABORT_APPROACH_TIMEOUT,
+        ABORT_INTERACTION_DWELL_TOO_SHORT,
+        RESET_RECOVERED,
+        TEMPORAL_RESET_DISARMED,
+        TEMPORAL_RESET_NON_MONOTONIC,
+    }
+)
 ContextKey = tuple[str, str]
 
 
