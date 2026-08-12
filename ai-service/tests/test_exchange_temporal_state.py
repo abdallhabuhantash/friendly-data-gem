@@ -128,7 +128,7 @@ def _observation(
 
 
 def box_for(index: int) -> BBox:
-    return BBox(0.1 + 0.4 * index, 0.2, BOX_WIDTH, BOX_HEIGHT)
+    return BBox(0.1 + 0.35 * index, 0.2, BOX_WIDTH, BOX_HEIGHT)
 
 
 def frame(
