@@ -211,7 +211,36 @@ class PaperHandoffFusionTracker:
                 reason=mismatch,
             )
 
+        # --- Task 3D lifecycle: retire stale generations of this context ------
+        # Generation isolation alone would keep replaced stream incarnations
+        # stored forever. Only OTHER generations of this exact (camera, rule) are
+        # retired: never another camera and never another rule.
+        self._drop(
+            lambda other: other[0] == join.camera_id
+            and other[2] == join.rule_id
+            and other[1] != join.stream_generation
+        )
+
+        # --- Task 3D abort/reset is authoritative -----------------------------
+        # A terminal Task 3D reason ends that exact temporal candidate. The
+        # terminal frame itself may never add paper dwell, and no paper evidence
+        # of the terminated candidate may survive it.
+        if temporal.abort_reason in TERMINAL_TEMPORAL_REASONS:
+            self._candidates.pop(key, None)
+            self._order.pop(key, None)
+            return PaperHandoffFusionResult(
+                status=PaperHandoffFusionStatus.OK,
+                identity=identity,
+                pair_frame_sequence=join.pair_frame_sequence,
+                pair_observed_at=join.pair_observed_at,
+                temporal_phase=temporal.phase,
+                paper_support_status=PaperSupportStatus.UNKNOWN,
+                temporal_completed_this_frame=bool(temporal.completed_this_frame),
+                reason=temporal.abort_reason,
+            )
+
         # --- explicit fail-closed fusion frame-order guard -------------------
+
         now = join.pair_observed_at
         previous = self._order.get(key)
         if previous is not None and (
