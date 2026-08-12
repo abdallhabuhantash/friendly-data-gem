@@ -100,6 +100,7 @@ def spatial(
     paper_index: int,
     paper_status: PaperEvidenceStatus = PaperEvidenceStatus.OK,
     persons=None,
+    camera_id: str = CAMERA_ID,
 ):
     persons = persons if persons is not None else people()
     observations = tuple(
@@ -110,7 +111,7 @@ def spatial(
         TrackedPoseFrameResult(
             status=TrackedPoseFrameStatus.OK,
             observations=observations,
-            camera_id=CAMERA_ID,
+            camera_id=camera_id,
             frame_sequence=sequence,
             observed_at=observed_at,
             source_mode="live",
@@ -127,7 +128,7 @@ def spatial(
         frame_index=paper_index,
     )
     join = SameFrameJoin(
-        camera_id=CAMERA_ID,
+        camera_id=camera_id,
         pair_frame_sequence=sequence,
         paper_frame_index=paper_index,
         pair_observed_at=observed_at,
@@ -223,6 +224,7 @@ def run(
             paper_index=step,
             paper_status=paper_status,
             persons=persons,
+            camera_id=camera_id,
         )
     )
     return tracker.observe(
