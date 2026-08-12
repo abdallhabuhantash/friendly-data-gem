@@ -18,3 +18,8 @@ samples/*
 
 # Benchmark output is local measurement data, never committed.
 benchmark-results/
+
+# Paper detector datasets and training runs are local-only.
+datasets/
+training-runs/
+paper-eval-results/

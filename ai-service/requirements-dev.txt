@@ -3,3 +3,7 @@
 #   pip install -r requirements.txt -r requirements-dev.txt
 pytest==8.3.4
 ruff==0.8.4
+# Dataset-YAML validation in scripts/train_paper_detector.py (also an
+# ultralytics runtime dependency; pinned here so tests can run standalone).
+PyYAML==6.0.2
+
