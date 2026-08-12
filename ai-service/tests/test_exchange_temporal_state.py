@@ -479,7 +479,13 @@ def test_disarmed_sequence_cannot_prime_post_arm_detection() -> None:
     # Arming starts clean from IDLE: a separation-looking frame proves nothing.
     first_armed = observe(tracker, gap_frame(0.7, sequence=7, observed_at=at(7.0)))
     assert first_armed.completed == ()
-    assert first_armed.candidates == ()
+    # Any post-arm candidate starts fresh: no inherited interaction/separation.
+    fresh = first_armed.candidate(PAIR)
+    assert fresh is not None
+    assert fresh.phase is HandoffPhase.APPROACHING
+    assert fresh.candidate_started_at == at(7.0)
+    assert fresh.interaction_started_at is None
+    assert fresh.separation_started_at is None
 
 
 def test_disarm_during_approaching_clears_candidate() -> None:
