@@ -177,7 +177,7 @@ class TrackedPoseObservation:
             ("person_index", self.person_index),
             ("pose_index", self.pose_index),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            if not strict_index(value):
                 raise TrackedPoseContractError(f"{label} must be a non-negative int")
         for label, box in (("person_bbox", self.person_bbox), ("pose_bbox", self.pose_bbox)):
             if not isinstance(box, BBox):
