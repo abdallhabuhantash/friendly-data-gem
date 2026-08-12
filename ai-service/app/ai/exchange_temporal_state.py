@@ -433,6 +433,8 @@ class HandoffTemporalTracker:
                 candidate.phase = HandoffPhase.INTERACTION
                 candidate.interaction_started_at = now
                 candidate.interaction_last_at = now
+                candidate.interaction_observed_seconds = 0.0
+
             elif distance > spec.approach_start_wrist_distance:
                 self._candidates.pop(key, None)
                 return self._result(
