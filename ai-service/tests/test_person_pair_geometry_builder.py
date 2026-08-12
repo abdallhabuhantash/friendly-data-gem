@@ -632,6 +632,8 @@ def test_nothing_in_the_live_runtime_imports_task_3c() -> None:
             # equally dormant (pure functions, no runtime/event coupling).
             "paper_pair_spatial.py",
             "paper_pair_spatial_builder.py",
+            # Task 3G fuses Task 3D + Task 3F and is equally dormant.
+            "paper_handoff_fusion.py",
         }:
             continue
         source = path.read_text()
