@@ -25,6 +25,7 @@ from itertools import combinations
 from typing import Optional
 
 from app.ai.body_feature_frame_builder import build_body_feature_frame
+from app.ai.region_resolver import relative_point
 from app.domain.body_features import BodySide, TrackedBodyFeatures, WristFeatures
 from app.domain.geometry import BBox, intersection_area, iou
 from app.domain.pair_geometry import (
@@ -37,7 +38,6 @@ from app.domain.pair_geometry import (
     WristPairGeometry,
     WristRelativeToOtherPerson,
 )
-from app.domain.regions import RelativePoint
 from app.domain.tracked_pose_observations import TrackedPoseFrameResult
 
 _SIDES: tuple[BodySide, ...] = (BodySide.LEFT, BodySide.RIGHT)
@@ -66,16 +66,6 @@ def _available_wrist(
     if not wrist.available or wrist.x is None or wrist.y is None:
         return None
     return wrist
-
-
-def _relative_to_bbox(x: float, y: float, box: BBox) -> Optional[RelativePoint]:
-    """Person-relative coordinates, deliberately UNCLAMPED. ``None`` if degenerate."""
-    if box.width <= 0.0 or box.height <= 0.0:
-        return None
-    return RelativePoint(
-        relative_x=(x - box.x) / box.width,
-        relative_y=(y - box.y) / box.height,
-    )
 
 
 def _axis_projection(
@@ -184,8 +174,10 @@ def _pair_geometry(
             wrist = _available_wrist(owner, side)
             if wrist is None:
                 continue
-            relative = _relative_to_bbox(
-                float(wrist.x), float(wrist.y), other.person_bbox
+            # Authoritative, single geometry policy (validation + MIN_PERSON_EXTENT
+            # + unclamped relative coordinates) lives in region_resolver.
+            relative = relative_point(
+                other.person_bbox, (float(wrist.x), float(wrist.y))
             )
             if relative is not None:
                 relative_facts.append(
