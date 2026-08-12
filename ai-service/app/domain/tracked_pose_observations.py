@@ -126,6 +126,16 @@ class TrackedPoseKeypoint:
                     f"{self.name.value} is available but carries no resolved "
                     "person-relative position"
                 )
+            if type(self.inside_person) is not bool:
+                raise TrackedPoseContractError(
+                    f"{self.name.value} inside_person must be a real bool"
+                )
+            if not isinstance(self.relative_position, RelativePoint):
+                raise TrackedPoseContractError("relative_position must be a RelativePoint")
+            if self.inside_person is not self.relative_position.inside_person:
+                raise TrackedPoseContractError(
+                    f"{self.name.value} inside_person contradicts its relative position"
+                )
         else:
             if self.x is not None or self.y is not None:
                 raise TrackedPoseContractError(
