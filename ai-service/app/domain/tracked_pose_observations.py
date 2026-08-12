@@ -66,6 +66,11 @@ def _unit(value: object) -> bool:
     return _finite(value) and 0.0 <= float(value) <= 1.0
 
 
+def strict_index(value: object) -> bool:
+    """True only for a REAL non-negative ``int`` (``bool`` is never an index)."""
+    return type(value) is int and value >= 0
+
+
 class TrackedPoseFrameStatus(str, Enum):
     """Outcome of ONE derived tracked-pose frame build."""
 
