@@ -27,7 +27,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from app.domain.handoff_temporal import HandoffPhase, HandoffTemporalResult
+from app.domain.handoff_temporal import (
+    ABORT_APPROACH_LOST,
+    ABORT_APPROACH_TIMEOUT,
+    ABORT_EVIDENCE_GAP_EXCEEDED,
+    ABORT_INTERACTION_DWELL_TOO_SHORT,
+    RESET_DISARMED as TEMPORAL_RESET_DISARMED,
+    RESET_NON_MONOTONIC as TEMPORAL_RESET_NON_MONOTONIC,
+    RESET_RECOVERED,
+    HandoffPhase,
+    HandoffTemporalResult,
+)
 from app.domain.pair_geometry import PersonPairKey
 from app.domain.paper_handoff_fusion import (
     ABORT_PAPER_UNKNOWN_GAP_EXCEEDED,
@@ -54,6 +64,21 @@ from app.domain.paper_pair_spatial import (
 #: Full fusion state identity. A change in ANY member is different state:
 #: cameras, stream incarnations, rules and pairs never share or migrate state.
 StateKey = tuple[str, object, str, PersonPairKey]
+
+#: Task 3D reasons that TERMINATE that exact temporal candidate. Task 3D remains
+#: authoritative for the lifecycle: this layer only mirrors it and never decides
+#: on its own that a candidate ended.
+TERMINAL_TEMPORAL_REASONS: frozenset[str] = frozenset(
+    {
+        ABORT_EVIDENCE_GAP_EXCEEDED,
+        ABORT_APPROACH_LOST,
+        ABORT_APPROACH_TIMEOUT,
+        ABORT_INTERACTION_DWELL_TOO_SHORT,
+        RESET_RECOVERED,
+        TEMPORAL_RESET_DISARMED,
+        TEMPORAL_RESET_NON_MONOTONIC,
+    }
+)
 ContextKey = tuple[str, str]
 
 
@@ -211,7 +236,36 @@ class PaperHandoffFusionTracker:
                 reason=mismatch,
             )
 
+        # --- Task 3D lifecycle: retire stale generations of this context ------
+        # Generation isolation alone would keep replaced stream incarnations
+        # stored forever. Only OTHER generations of this exact (camera, rule) are
+        # retired: never another camera and never another rule.
+        self._drop(
+            lambda other: other[0] == join.camera_id
+            and other[2] == join.rule_id
+            and other[1] != join.stream_generation
+        )
+
+        # --- Task 3D abort/reset is authoritative -----------------------------
+        # A terminal Task 3D reason ends that exact temporal candidate. The
+        # terminal frame itself may never add paper dwell, and no paper evidence
+        # of the terminated candidate may survive it.
+        if temporal.abort_reason in TERMINAL_TEMPORAL_REASONS:
+            self._candidates.pop(key, None)
+            self._order.pop(key, None)
+            return PaperHandoffFusionResult(
+                status=PaperHandoffFusionStatus.OK,
+                identity=identity,
+                pair_frame_sequence=join.pair_frame_sequence,
+                pair_observed_at=join.pair_observed_at,
+                temporal_phase=temporal.phase,
+                paper_support_status=PaperSupportStatus.UNKNOWN,
+                temporal_completed_this_frame=bool(temporal.completed_this_frame),
+                reason=temporal.abort_reason,
+            )
+
         # --- explicit fail-closed fusion frame-order guard -------------------
+
         now = join.pair_observed_at
         previous = self._order.get(key)
         if previous is not None and (
