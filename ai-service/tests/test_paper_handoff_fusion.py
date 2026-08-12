@@ -61,10 +61,10 @@ SPEC = PaperHandoffFusionSpec(
 )
 BOTH_SPEC = dataclasses.replace(SPEC, support_mode=PaperSupportMode.BOTH_LOCKED_WRISTS)
 
-NEAR_PAPER = paper(BBox(0.425, 0.39, 0.02, 0.02))          # between both wrists
-NEAR_A_ONLY = paper(BBox(0.31, 0.39, 0.02, 0.02))          # near a-right only
+NEAR_PAPER = paper(BBox(0.415, 0.39, 0.02, 0.02))          # between both wrists
+NEAR_A_ONLY = paper(BBox(0.34, 0.39, 0.02, 0.02))          # near a-right only
 FAR_PAPER = paper(BBox(0.05, 0.85, 0.03, 0.03))            # far from both wrists
-LOW_CONFIDENCE = paper(BBox(0.425, 0.39, 0.02, 0.02), confidence=0.2)
+LOW_CONFIDENCE = paper(BBox(0.415, 0.39, 0.02, 0.02), confidence=0.2)
 
 
 def at(step: float) -> datetime:
@@ -372,13 +372,15 @@ def test_multiple_detections_resolve_deterministically_and_fuse_once() -> None:
     detections = (FAR_PAPER, NEAR_PAPER, NEAR_A_ONLY)
     result = complete_with_support(tracker, detections=detections)
     assert result.fused_completed_this_frame is True
-    assert result.qualifying_paper_detection_index == 1
+    # Deterministic selection: nearest qualifying detection wins (index 2 here),
+    # which is a frame-local choice and never a tracked paper identity.
+    assert result.qualifying_paper_detection_index == 2
     repeat = run(tracker, detections, step=4, completed=True)
     assert repeat.fused_completed_this_frame is False
 
 
 def test_equal_candidate_detections_break_ties_by_lowest_index() -> None:
-    mirror = paper(BBox(0.425, 0.39, 0.02, 0.02))
+    mirror = paper(BBox(0.415, 0.39, 0.02, 0.02))
     tracker = PaperHandoffFusionTracker()
     result = run(tracker, (NEAR_PAPER, mirror), step=0)
     assert result.qualifying_paper_detection_index == 0
@@ -392,7 +394,7 @@ def test_unknown_paper_evidence_pauses_observed_dwell() -> None:
     run(tracker, (NEAR_PAPER,), step=0)
     run(tracker, (NEAR_PAPER,), step=1)
     degraded = run(
-        tracker, (), step=2, paper_status=PaperEvidenceStatus.PROVIDER_UNAVAILABLE
+        tracker, (), step=2, paper_status=PaperEvidenceStatus.MODEL_UNAVAILABLE
     )
     assert degraded.paper_support_status is PaperSupportStatus.UNKNOWN
     assert degraded.observed_total_paper_seconds == pytest.approx(0.3)
@@ -411,7 +413,7 @@ def test_unknown_gap_beyond_tolerance_invalidates_corroboration() -> None:
         tracker,
         (),
         step=3,
-        paper_status=PaperEvidenceStatus.PROVIDER_UNAVAILABLE,
+        paper_status=PaperEvidenceStatus.MODEL_UNAVAILABLE,
         observed_at=at(6.0),
     )
     assert gone.reason == ABORT_PAPER_UNKNOWN_GAP_EXCEEDED
