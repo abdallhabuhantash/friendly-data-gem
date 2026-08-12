@@ -325,6 +325,23 @@ class TrackedPoseFrameResult:
             seen_tracks.add(observation.person_tracking_id)
             seen_poses.add(observation.pose_index)
 
+        if self.status is TrackedPoseFrameStatus.OK:
+            unresolved_poses: set[int] = set()
+            for diagnostic in self.unresolved:
+                if diagnostic.pose_index in unresolved_poses:
+                    raise TrackedPoseContractError(
+                        "duplicate pose_index in unresolved diagnostics"
+                    )
+                if diagnostic.pose_index in seen_poses:
+                    raise TrackedPoseContractError(
+                        "a pose cannot be both resolved and unresolved"
+                    )
+                unresolved_poses.add(diagnostic.pose_index)
+            if seen_poses | unresolved_poses != set(range(self.pose_instance_count)):
+                raise TrackedPoseContractError(
+                    "an ok tracked-pose frame must account for every source pose exactly once"
+                )
+
     @property
     def ok(self) -> bool:
         return self.status is TrackedPoseFrameStatus.OK
