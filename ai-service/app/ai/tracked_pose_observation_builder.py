@@ -91,18 +91,29 @@ def build_tracked_pose_observations(
     persons = tuple(frame_observations.persons)
     matches = tuple(association_result.matches)
 
-    # A. the association must describe the SAME pose frame.
+    # A. the association must describe the SAME pose frame, with explicit provenance.
     if (
-        association_result.source_pose_status is not None
-        and association_result.source_pose_status is not pose_result.status
+        association_result.source_pose_status is not PoseStatus.OK
+        or association_result.source_pose_status is not pose_result.status
     ):
         return _inconsistent(
             frame_observations,
             pose_result,
-            "association source pose status contradicts the supplied pose result",
+            "association source pose status is missing or contradicts the supplied pose result",
         )
 
-    # B. matches must cover the pose instances exactly once each.
+    # B. every match index must be a real non-negative int BEFORE any indexing.
+    for match in matches:
+        if not strict_index(match.pose_index):
+            return _inconsistent(
+                frame_observations, pose_result, "association match pose_index is malformed"
+            )
+        if match.person_index is not None and not strict_index(match.person_index):
+            return _inconsistent(
+                frame_observations, pose_result, "association match person_index is malformed"
+            )
+
+    # C. matches must cover the pose instances exactly once each.
     pose_indices = [match.pose_index for match in matches]
     if len(set(pose_indices)) != len(pose_indices):
         return _inconsistent(
