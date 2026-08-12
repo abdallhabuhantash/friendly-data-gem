@@ -676,4 +676,4 @@ def test_invalid_observed_at_and_source_mode_rejected():
     with pytest.raises(TrackedPoseContractError):
         _ok_frame(observed_at="2026-01-01")
     with pytest.raises(TrackedPoseContractError):
-        _ok_frame(source_mode="rtsp")
+        _ok_frame(source_mode="bogus-mode")

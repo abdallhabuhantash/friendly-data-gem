@@ -35,10 +35,12 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, get_args
 
 from .geometry import BBox
 from .models import SourceMode
+
+SOURCE_MODES: frozenset[str] = frozenset(get_args(SourceMode))
 from .pose import (
     COCO_17_INDEX_BY_NAME,
     COCO_17_KEYPOINT_COUNT,
@@ -305,7 +307,7 @@ class TrackedPoseFrameResult:
             raise TrackedPoseContractError("frame_sequence must be a non-negative int")
         if self.observed_at is not None and not isinstance(self.observed_at, datetime):
             raise TrackedPoseContractError("observed_at must be a datetime")
-        if self.source_mode is not None and not isinstance(self.source_mode, SourceMode):
+        if self.source_mode is not None and self.source_mode not in SOURCE_MODES:
             raise TrackedPoseContractError("source_mode must be a valid SourceMode")
         if self.source_pose_status is not None and not isinstance(
             self.source_pose_status, PoseStatus
