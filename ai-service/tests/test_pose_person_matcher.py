@@ -507,7 +507,12 @@ def test_no_runtime_module_imports_the_matcher():
         "pose_runtime.py",
         "config.py",
         "orchestrator.py",
+        # Pure dormant derived layer (Task 2D-D): consumes the association
+        # contract but is imported by no runtime module.
+        "tracked_pose_observations.py",
+        "tracked_pose_observation_builder.py",
     }
+
     offenders = []
     for path in root.rglob("*.py"):
         if path.name in allowed:
