@@ -398,7 +398,11 @@ class HandoffTemporalTracker:
                     phase=HandoffPhase.IDLE,
                     abort_reason=ABORT_EVIDENCE_GAP_EXCEEDED,
                 )
+            # Tolerated gap: candidate stays alive with its locked wrist pair,
+            # but every dwell accumulator pauses (no blind time is credited).
+            candidate.pause_dwell_accounting()
             return self._result(key, candidate, None, False)
+
 
         distance = float(evidence)
         candidate.last_distance = distance
