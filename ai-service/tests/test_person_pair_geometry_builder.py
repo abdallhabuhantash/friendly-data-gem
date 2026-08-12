@@ -628,6 +628,10 @@ def test_nothing_in_the_live_runtime_imports_task_3c() -> None:
             # is itself dormant (no runtime, event or notification coupling).
             "handoff_temporal.py",
             "exchange_temporal_state.py",
+            # Task 3F derives paper<->pair spatial geometry from Task 3C and is
+            # equally dormant (pure functions, no runtime/event coupling).
+            "paper_pair_spatial.py",
+            "paper_pair_spatial_builder.py",
         }:
             continue
         source = path.read_text()
