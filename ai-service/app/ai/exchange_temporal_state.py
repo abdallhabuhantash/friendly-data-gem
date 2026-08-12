@@ -68,7 +68,16 @@ def _seconds(later: datetime, earlier: datetime) -> float:
 
 @dataclass
 class _Candidate:
-    """PRIVATE mutable per-pair state. Only bounded scalars: no frame history."""
+    """PRIVATE mutable per-pair state. Only bounded scalars: no frame history.
+
+    Dwell accounting is ACCUMULATED OBSERVED time, never wall time. Each dwell
+    keeps a bounded accumulator plus an optional anchor timestamp. The anchor is
+    cleared whenever the supporting evidence stops being continuously valid
+    (UNKNOWN / degraded / missing pair or wrist, or valid-but-non-qualifying
+    geometry), so blind intervals can never be credited as observed dwell. The
+    accumulator itself is retained, so evidence returning inside
+    ``max_unknown_gap_seconds`` resumes from the previously observed dwell.
+    """
 
     side_a: BodySide
     side_b: BodySide
@@ -79,11 +88,19 @@ class _Candidate:
     last_valid_evidence_at: datetime
     phase: HandoffPhase = HandoffPhase.APPROACHING
     interaction_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid near-interaction frame (None = paused).
     interaction_last_at: Optional[datetime] = None
+    interaction_observed_seconds: float = 0.0
     separation_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid separated frame (None = paused).
+    separation_last_at: Optional[datetime] = None
+    separation_observed_seconds: float = 0.0
     separation_max_distance: float = 0.0
     completed_at: Optional[datetime] = None
     recovery_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid recovery frame (None = paused).
+    recovery_last_at: Optional[datetime] = None
+    recovery_observed_seconds: float = 0.0
 
     @property
     def approach_reduction(self) -> float:
@@ -95,9 +112,20 @@ class _Candidate:
 
     @property
     def interaction_duration(self) -> float:
-        if self.interaction_started_at is None or self.interaction_last_at is None:
-            return 0.0
-        return _seconds(self.interaction_last_at, self.interaction_started_at)
+        """Genuinely observed accumulated interaction dwell (unknown excluded)."""
+        return self.interaction_observed_seconds
+
+    @property
+    def separation_duration(self) -> float:
+        """Genuinely observed accumulated separation dwell (unknown excluded)."""
+        return self.separation_observed_seconds
+
+    def pause_dwell_accounting(self) -> None:
+        """UNKNOWN evidence: keep accumulators, drop anchors (no blind credit)."""
+        self.interaction_last_at = None
+        self.separation_last_at = None
+        self.recovery_last_at = None
+
 
 
 class HandoffTemporalTracker:
