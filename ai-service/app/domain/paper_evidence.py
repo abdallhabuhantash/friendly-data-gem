@@ -331,4 +331,3 @@ class PaperEvidenceFrame:
 #: Task 3E-B naming alias: the detection type IS the paper evidence detection.
 PaperEvidenceDetection = PaperDetection
 
-        return payload
