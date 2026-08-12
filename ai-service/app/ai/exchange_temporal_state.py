@@ -449,10 +449,19 @@ class HandoffTemporalTracker:
         if candidate.phase is HandoffPhase.INTERACTION:
             candidate.closest_distance = min(candidate.closest_distance, distance)
             if distance <= spec.interaction_wrist_distance:
+                # Accumulate ONLY the interval between two consecutive frames
+                # that both carried valid near-interaction evidence.
+                if candidate.interaction_last_at is not None:
+                    candidate.interaction_observed_seconds += _seconds(
+                        now, candidate.interaction_last_at
+                    )
                 candidate.interaction_last_at = now
             elif candidate.interaction_duration >= spec.min_interaction_dwell_seconds:
                 candidate.phase = HandoffPhase.SEPARATING
+                candidate.interaction_last_at = None
                 candidate.separation_started_at = None
+                candidate.separation_last_at = None
+                candidate.separation_observed_seconds = 0.0
                 candidate.separation_max_distance = distance
             else:
                 self._candidates.pop(key, None)
@@ -477,17 +486,27 @@ class HandoffTemporalTracker:
             if separated:
                 if candidate.separation_started_at is None:
                     candidate.separation_started_at = now
+                    candidate.separation_observed_seconds = 0.0
+                elif candidate.separation_last_at is not None:
+                    candidate.separation_observed_seconds += _seconds(
+                        now, candidate.separation_last_at
+                    )
+                candidate.separation_last_at = now
                 if (
-                    _seconds(now, candidate.separation_started_at)
+                    candidate.separation_duration
                     >= spec.min_separation_dwell_seconds
                 ):
                     candidate.phase = HandoffPhase.COMPLETED
                     candidate.completed_at = now
                     candidate.recovery_started_at = None
+                    candidate.recovery_last_at = None
+                    candidate.recovery_observed_seconds = 0.0
                     completed_now = True
             else:
                 # Separation progress restarts; near geometry resumes interaction.
                 candidate.separation_started_at = None
+                candidate.separation_last_at = None
+                candidate.separation_observed_seconds = 0.0
                 if distance <= spec.interaction_wrist_distance:
                     candidate.phase = HandoffPhase.INTERACTION
                     candidate.interaction_last_at = now
@@ -498,10 +517,13 @@ class HandoffTemporalTracker:
             if distance >= spec.recovery_wrist_distance:
                 if candidate.recovery_started_at is None:
                     candidate.recovery_started_at = now
-                if (
-                    _seconds(now, candidate.recovery_started_at)
-                    >= spec.recovery_dwell_seconds
-                ):
+                    candidate.recovery_observed_seconds = 0.0
+                elif candidate.recovery_last_at is not None:
+                    candidate.recovery_observed_seconds += _seconds(
+                        now, candidate.recovery_last_at
+                    )
+                candidate.recovery_last_at = now
+                if candidate.recovery_observed_seconds >= spec.recovery_dwell_seconds:
                     self._candidates.pop(key, None)
                     return self._result(
                         key,
@@ -512,6 +534,9 @@ class HandoffTemporalTracker:
                     )
             else:
                 candidate.recovery_started_at = None
+                candidate.recovery_last_at = None
+                candidate.recovery_observed_seconds = 0.0
+
 
         return self._result(
             key,
