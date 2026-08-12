@@ -438,9 +438,16 @@ class PaperPairSpatialFrame:
     paper_detection_count: int = 0
     pair_count: int = 0
     camera_id: Optional[str] = None
-    frame_sequence: Optional[int] = None
-    timestamp_seconds: Optional[float] = None
-    observed_at: Optional[datetime] = None
+    #: Pair-pipeline frame counter, as explicitly declared in the join.
+    pair_frame_sequence: Optional[int] = None
+    #: Paper-pipeline frame index, as explicitly declared in the join. It is a
+    #: SEPARATE counter and is never required to equal ``pair_frame_sequence``.
+    paper_frame_index: Optional[int] = None
+    #: Media-relative seconds from the PAPER pipeline only.
+    paper_timestamp_seconds: Optional[float] = None
+    #: Absolute datetime from the PAIR pipeline only.
+    pair_observed_at: Optional[datetime] = None
+
     source_paper_status: Optional[PaperEvidenceStatus] = None
     source_pair_status: Optional[PairFrameStatus] = None
     reason: Optional[str] = None
