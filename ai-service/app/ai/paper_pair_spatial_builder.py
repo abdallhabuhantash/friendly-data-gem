@@ -51,6 +51,10 @@ from app.domain.paper_pair_spatial import (
 _SIDES: tuple[BodySide, ...] = (BodySide.LEFT, BodySide.RIGHT)
 
 
+class _PersonGeometryUnusable(Exception):
+    """Internal signal: a required pair participant has unusable geometry."""
+
+
 def _ratio(value: float, denominator: float) -> Optional[float]:
     if denominator <= 0.0:
         return None
@@ -63,34 +67,42 @@ def _provenance_mismatch(
     paper_frame: PaperEvidenceFrame,
     join: SameFrameJoin,
 ) -> Optional[str]:
-    """Returns a reason string when the two inputs cannot be proven same-frame."""
+    """Returns a reason string when the two inputs cannot be proven same-frame.
+
+    The pair-pipeline counter/clock and the paper-pipeline counter/clock are
+    checked ONLY against their own declared join fields. The two independent
+    counters are never compared with each other, and an absolute datetime is
+    never compared with media-relative seconds.
+    """
     if pair_frame.camera_id is not None and pair_frame.camera_id != join.camera_id:
         return "camera_identity_mismatch"
     if (
         pair_frame.frame_sequence is not None
-        and pair_frame.frame_sequence != join.frame_sequence
+        and pair_frame.frame_sequence != join.pair_frame_sequence
     ):
-        return "frame_sequence_mismatch"
-    if (
-        paper_frame.frame_index is not None
-        and paper_frame.frame_index != join.frame_sequence
-    ):
-        return "paper_frame_index_mismatch"
+        return "pair_frame_sequence_mismatch"
+    if paper_frame.frame_index is not None:
+        if paper_frame.frame_index != join.paper_frame_index:
+            return "paper_frame_index_mismatch"
     if paper_frame.timestamp_seconds is not None:
-        if join.timestamp_seconds is None:
+        if join.paper_timestamp_seconds is None:
             return "paper_timestamp_without_declared_join_timestamp"
         if (
-            abs(float(paper_frame.timestamp_seconds) - float(join.timestamp_seconds))
-            > join.timestamp_tolerance_seconds
+            abs(
+                float(paper_frame.timestamp_seconds)
+                - float(join.paper_timestamp_seconds)
+            )
+            > join.paper_timestamp_tolerance_seconds
         ):
-            return "timestamp_disagreement"
+            return "paper_timestamp_disagreement"
     if (
         pair_frame.observed_at is not None
-        and join.observed_at is not None
-        and pair_frame.observed_at != join.observed_at
+        and join.pair_observed_at is not None
+        and pair_frame.observed_at != join.pair_observed_at
     ):
-        return "observed_at_mismatch"
+        return "pair_observed_at_mismatch"
     return None
+
 
 
 def _paper_facts(index: int, detection: PaperDetection) -> PaperGeometryFacts:
@@ -194,14 +206,14 @@ def _pair_fact(
     diagonal_b = person_b.person_bbox.diagonal
     mean_diagonal = (diagonal_a + diagonal_b) / 2.0
 
-    person_facts = tuple(
-        fact
-        for fact in (
-            _person_fact(paper, person_a),
-            _person_fact(paper, person_b),
-        )
-        if fact is not None
-    )
+    # BOTH participants must have resolvable person-relative geometry. Partial
+    # pair evidence (one participant only) is never produced: an unusable box
+    # fails the WHOLE derived frame closed.
+    fact_a = _person_fact(paper, person_a)
+    fact_b = _person_fact(paper, person_b)
+    if fact_a is None or fact_b is None:
+        raise _PersonGeometryUnusable("person_geometry_unusable")
+    person_facts = (fact_a, fact_b)
 
     wrist_facts: list[PaperWristSpatialFact] = []
     for person, own_diagonal in ((person_a, diagonal_a), (person_b, diagonal_b)):
@@ -276,9 +288,10 @@ def build_paper_pair_spatial_frame(
 
     common = {
         "camera_id": join.camera_id,
-        "frame_sequence": join.frame_sequence,
-        "timestamp_seconds": join.timestamp_seconds,
-        "observed_at": join.observed_at or pair_frame.observed_at,
+        "pair_frame_sequence": join.pair_frame_sequence,
+        "paper_frame_index": join.paper_frame_index,
+        "paper_timestamp_seconds": join.paper_timestamp_seconds,
+        "pair_observed_at": join.pair_observed_at or pair_frame.observed_at,
         "source_paper_status": paper_frame.status,
         "source_pair_status": pair_frame.status,
     }
@@ -310,9 +323,17 @@ def build_paper_pair_spatial_frame(
         _paper_facts(index, detection)
         for index, detection in enumerate(paper_frame.detections)
     )
-    facts = tuple(
-        _pair_fact(pair, paper) for pair in pair_frame.pairs for paper in papers
-    )
+    try:
+        facts = tuple(
+            _pair_fact(pair, paper) for pair in pair_frame.pairs for paper in papers
+        )
+    except _PersonGeometryUnusable as error:
+        # Fail closed for the WHOLE frame: no already-built facts are returned.
+        return PaperPairSpatialFrame(
+            status=PaperPairSpatialStatus.INCONSISTENT_INPUT,
+            reason=str(error),
+            **common,
+        )
     return PaperPairSpatialFrame(
         status=PaperPairSpatialStatus.OK,
         facts=facts,

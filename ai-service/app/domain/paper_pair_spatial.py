@@ -108,36 +108,56 @@ class PaperPairSpatialStatus(str, Enum):
 class SameFrameJoin:
     """EXPLICIT same-frame provenance declared by the caller.
 
-    The Task 3C pair frame and the Task 3E paper frame do NOT expose identical
-    metadata fields (``camera_id``/``frame_sequence``/``observed_at`` versus
-    ``frame_index``/``timestamp_seconds``). Rather than guessing that any two
-    field names are equivalent, the caller must state the authoritative frame
-    identity here. Whatever each side does expose is then validated against it,
-    and any disagreement is rejected as ``INCONSISTENT_INPUT``.
+    The Task 3C pair frame and the Task 3E paper frame are produced by two
+    INDEPENDENT pipelines with INDEPENDENT counters and INDEPENDENT clocks:
+
+    * the pair frame carries ``frame_sequence`` (a runtime frame counter) and an
+      optional ABSOLUTE ``observed_at`` datetime;
+    * the paper frame carries ``frame_index`` (e.g. an evaluator/decode index)
+      and an optional MEDIA-RELATIVE ``timestamp_seconds``.
+
+    Those numbers are NEVER required to be equal, and equal numbers NEVER imply
+    correspondence. This object IS the caller's explicit declaration that a
+    specific ``pair_frame_sequence`` and a specific ``paper_frame_index`` are
+    the same source image. Each side is validated ONLY against its own declared
+    field, and no offset or conversion between the two clocks is invented.
     """
 
     camera_id: str
-    frame_sequence: int
-    timestamp_seconds: Optional[float] = None
-    observed_at: Optional[datetime] = None
-    #: Allowed absolute timestamp disagreement, in seconds. Defaults to exact.
-    timestamp_tolerance_seconds: float = 0.0
+    pair_frame_sequence: int
+    paper_frame_index: int
+    #: Expected ABSOLUTE datetime of the pair-side observation (pair side only).
+    pair_observed_at: Optional[datetime] = None
+    #: Expected MEDIA-RELATIVE seconds of the paper-side frame (paper side only).
+    paper_timestamp_seconds: Optional[float] = None
+    #: Allowed absolute disagreement for the PAPER-side relative timestamp.
+    paper_timestamp_tolerance_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         _non_blank(self.camera_id, "camera_id")
-        if not strict_index(self.frame_sequence):
+        if not strict_index(self.pair_frame_sequence):
             raise PaperPairSpatialContractError(
-                "frame_sequence must be a non-negative int"
+                "pair_frame_sequence must be a non-negative int"
             )
-        if self.timestamp_seconds is not None and not _finite(self.timestamp_seconds):
+        if not strict_index(self.paper_frame_index):
             raise PaperPairSpatialContractError(
-                "timestamp_seconds must be a finite number when supplied"
+                "paper_frame_index must be a non-negative int"
             )
-        if self.observed_at is not None and not isinstance(self.observed_at, datetime):
-            raise PaperPairSpatialContractError("observed_at must be a datetime")
+        if self.paper_timestamp_seconds is not None and not _finite(
+            self.paper_timestamp_seconds
+        ):
+            raise PaperPairSpatialContractError(
+                "paper_timestamp_seconds must be a finite number when supplied"
+            )
+        if self.pair_observed_at is not None and not isinstance(
+            self.pair_observed_at, datetime
+        ):
+            raise PaperPairSpatialContractError("pair_observed_at must be a datetime")
         _non_negative(
-            self.timestamp_tolerance_seconds, "timestamp_tolerance_seconds"
+            self.paper_timestamp_tolerance_seconds,
+            "paper_timestamp_tolerance_seconds",
         )
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -418,9 +438,16 @@ class PaperPairSpatialFrame:
     paper_detection_count: int = 0
     pair_count: int = 0
     camera_id: Optional[str] = None
-    frame_sequence: Optional[int] = None
-    timestamp_seconds: Optional[float] = None
-    observed_at: Optional[datetime] = None
+    #: Pair-pipeline frame counter, as explicitly declared in the join.
+    pair_frame_sequence: Optional[int] = None
+    #: Paper-pipeline frame index, as explicitly declared in the join. It is a
+    #: SEPARATE counter and is never required to equal ``pair_frame_sequence``.
+    paper_frame_index: Optional[int] = None
+    #: Media-relative seconds from the PAPER pipeline only.
+    paper_timestamp_seconds: Optional[float] = None
+    #: Absolute datetime from the PAIR pipeline only.
+    pair_observed_at: Optional[datetime] = None
+
     source_paper_status: Optional[PaperEvidenceStatus] = None
     source_pair_status: Optional[PairFrameStatus] = None
     reason: Optional[str] = None
@@ -449,14 +476,25 @@ class PaperPairSpatialFrame:
                 )
         if self.camera_id is not None:
             _non_blank(self.camera_id, "camera_id")
-        if self.frame_sequence is not None and not strict_index(self.frame_sequence):
+        for label, value in (
+            ("pair_frame_sequence", self.pair_frame_sequence),
+            ("paper_frame_index", self.paper_frame_index),
+        ):
+            if value is not None and not strict_index(value):
+                raise PaperPairSpatialContractError(
+                    f"{label} must be a non-negative int"
+                )
+        if self.paper_timestamp_seconds is not None and not _finite(
+            self.paper_timestamp_seconds
+        ):
             raise PaperPairSpatialContractError(
-                "frame_sequence must be a non-negative int"
+                "paper_timestamp_seconds must be finite"
             )
-        if self.timestamp_seconds is not None and not _finite(self.timestamp_seconds):
-            raise PaperPairSpatialContractError("timestamp_seconds must be finite")
-        if self.observed_at is not None and not isinstance(self.observed_at, datetime):
-            raise PaperPairSpatialContractError("observed_at must be a datetime")
+        if self.pair_observed_at is not None and not isinstance(
+            self.pair_observed_at, datetime
+        ):
+            raise PaperPairSpatialContractError("pair_observed_at must be a datetime")
+
         if self.source_paper_status is not None and not isinstance(
             self.source_paper_status, PaperEvidenceStatus
         ):
