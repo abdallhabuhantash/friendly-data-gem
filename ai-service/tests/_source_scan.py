@@ -8,28 +8,20 @@ make a source-text assertion fail.
 from __future__ import annotations
 
 import ast
-import io
 import pathlib
-import tokenize
 
 
 def code_text(path: pathlib.Path | str) -> str:
-    """Returns the module source with comments and docstrings removed."""
-    source = pathlib.Path(path).read_text(encoding="utf-8")
+    """Returns the module source with all docstrings and comments removed.
 
-    # Strip comments via tokenize.
-    pieces: list[str] = []
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type == tokenize.COMMENT:
-            continue
-        pieces.append(token.string if token.type != tokenize.NL else "\n")
-    stripped = "\n".join(pieces)
-
-    # Strip docstrings via AST re-render of the original source.
-    tree = ast.parse(source)
+    Re-rendering the AST drops comments automatically; docstrings are removed
+    explicitly. String/other literals used by real code are preserved, so a
+    prohibited mapping such as ``"book": "paper"`` is still caught.
+    """
+    tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            body = getattr(node, "body", [])
+            body = list(getattr(node, "body", []))
             if (
                 body
                 and isinstance(body[0], ast.Expr)
@@ -38,9 +30,4 @@ def code_text(path: pathlib.Path | str) -> str:
             ):
                 node.body = body[1:] or [ast.Pass()]
     ast.fix_missing_locations(tree)
-    return ast.unparse(tree) + "\n" + stripped_literals(stripped)
-
-
-def stripped_literals(text: str) -> str:
-    """Keeps the comment-free token stream available for coarse checks."""
-    return text
+    return ast.unparse(tree)
