@@ -476,14 +476,25 @@ class PaperPairSpatialFrame:
                 )
         if self.camera_id is not None:
             _non_blank(self.camera_id, "camera_id")
-        if self.frame_sequence is not None and not strict_index(self.frame_sequence):
+        for label, value in (
+            ("pair_frame_sequence", self.pair_frame_sequence),
+            ("paper_frame_index", self.paper_frame_index),
+        ):
+            if value is not None and not strict_index(value):
+                raise PaperPairSpatialContractError(
+                    f"{label} must be a non-negative int"
+                )
+        if self.paper_timestamp_seconds is not None and not _finite(
+            self.paper_timestamp_seconds
+        ):
             raise PaperPairSpatialContractError(
-                "frame_sequence must be a non-negative int"
+                "paper_timestamp_seconds must be finite"
             )
-        if self.timestamp_seconds is not None and not _finite(self.timestamp_seconds):
-            raise PaperPairSpatialContractError("timestamp_seconds must be finite")
-        if self.observed_at is not None and not isinstance(self.observed_at, datetime):
-            raise PaperPairSpatialContractError("observed_at must be a datetime")
+        if self.pair_observed_at is not None and not isinstance(
+            self.pair_observed_at, datetime
+        ):
+            raise PaperPairSpatialContractError("pair_observed_at must be a datetime")
+
         if self.source_paper_status is not None and not isinstance(
             self.source_paper_status, PaperEvidenceStatus
         ):
