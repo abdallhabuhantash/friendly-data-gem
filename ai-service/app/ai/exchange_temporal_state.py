@@ -68,7 +68,16 @@ def _seconds(later: datetime, earlier: datetime) -> float:
 
 @dataclass
 class _Candidate:
-    """PRIVATE mutable per-pair state. Only bounded scalars: no frame history."""
+    """PRIVATE mutable per-pair state. Only bounded scalars: no frame history.
+
+    Dwell accounting is ACCUMULATED OBSERVED time, never wall time. Each dwell
+    keeps a bounded accumulator plus an optional anchor timestamp. The anchor is
+    cleared whenever the supporting evidence stops being continuously valid
+    (UNKNOWN / degraded / missing pair or wrist, or valid-but-non-qualifying
+    geometry), so blind intervals can never be credited as observed dwell. The
+    accumulator itself is retained, so evidence returning inside
+    ``max_unknown_gap_seconds`` resumes from the previously observed dwell.
+    """
 
     side_a: BodySide
     side_b: BodySide
@@ -79,11 +88,19 @@ class _Candidate:
     last_valid_evidence_at: datetime
     phase: HandoffPhase = HandoffPhase.APPROACHING
     interaction_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid near-interaction frame (None = paused).
     interaction_last_at: Optional[datetime] = None
+    interaction_observed_seconds: float = 0.0
     separation_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid separated frame (None = paused).
+    separation_last_at: Optional[datetime] = None
+    separation_observed_seconds: float = 0.0
     separation_max_distance: float = 0.0
     completed_at: Optional[datetime] = None
     recovery_started_at: Optional[datetime] = None
+    #: Anchor of the last continuously-valid recovery frame (None = paused).
+    recovery_last_at: Optional[datetime] = None
+    recovery_observed_seconds: float = 0.0
 
     @property
     def approach_reduction(self) -> float:
@@ -95,9 +112,20 @@ class _Candidate:
 
     @property
     def interaction_duration(self) -> float:
-        if self.interaction_started_at is None or self.interaction_last_at is None:
-            return 0.0
-        return _seconds(self.interaction_last_at, self.interaction_started_at)
+        """Genuinely observed accumulated interaction dwell (unknown excluded)."""
+        return self.interaction_observed_seconds
+
+    @property
+    def separation_duration(self) -> float:
+        """Genuinely observed accumulated separation dwell (unknown excluded)."""
+        return self.separation_observed_seconds
+
+    def pause_dwell_accounting(self) -> None:
+        """UNKNOWN evidence: keep accumulators, drop anchors (no blind credit)."""
+        self.interaction_last_at = None
+        self.separation_last_at = None
+        self.recovery_last_at = None
+
 
 
 class HandoffTemporalTracker:
@@ -370,7 +398,11 @@ class HandoffTemporalTracker:
                     phase=HandoffPhase.IDLE,
                     abort_reason=ABORT_EVIDENCE_GAP_EXCEEDED,
                 )
+            # Tolerated gap: candidate stays alive with its locked wrist pair,
+            # but every dwell accumulator pauses (no blind time is credited).
+            candidate.pause_dwell_accounting()
             return self._result(key, candidate, None, False)
+
 
         distance = float(evidence)
         candidate.last_distance = distance
@@ -401,6 +433,8 @@ class HandoffTemporalTracker:
                 candidate.phase = HandoffPhase.INTERACTION
                 candidate.interaction_started_at = now
                 candidate.interaction_last_at = now
+                candidate.interaction_observed_seconds = 0.0
+
             elif distance > spec.approach_start_wrist_distance:
                 self._candidates.pop(key, None)
                 return self._result(
@@ -415,10 +449,19 @@ class HandoffTemporalTracker:
         if candidate.phase is HandoffPhase.INTERACTION:
             candidate.closest_distance = min(candidate.closest_distance, distance)
             if distance <= spec.interaction_wrist_distance:
+                # Accumulate ONLY the interval between two consecutive frames
+                # that both carried valid near-interaction evidence.
+                if candidate.interaction_last_at is not None:
+                    candidate.interaction_observed_seconds += _seconds(
+                        now, candidate.interaction_last_at
+                    )
                 candidate.interaction_last_at = now
             elif candidate.interaction_duration >= spec.min_interaction_dwell_seconds:
                 candidate.phase = HandoffPhase.SEPARATING
+                candidate.interaction_last_at = None
                 candidate.separation_started_at = None
+                candidate.separation_last_at = None
+                candidate.separation_observed_seconds = 0.0
                 candidate.separation_max_distance = distance
             else:
                 self._candidates.pop(key, None)
@@ -443,17 +486,27 @@ class HandoffTemporalTracker:
             if separated:
                 if candidate.separation_started_at is None:
                     candidate.separation_started_at = now
+                    candidate.separation_observed_seconds = 0.0
+                elif candidate.separation_last_at is not None:
+                    candidate.separation_observed_seconds += _seconds(
+                        now, candidate.separation_last_at
+                    )
+                candidate.separation_last_at = now
                 if (
-                    _seconds(now, candidate.separation_started_at)
+                    candidate.separation_duration
                     >= spec.min_separation_dwell_seconds
                 ):
                     candidate.phase = HandoffPhase.COMPLETED
                     candidate.completed_at = now
                     candidate.recovery_started_at = None
+                    candidate.recovery_last_at = None
+                    candidate.recovery_observed_seconds = 0.0
                     completed_now = True
             else:
                 # Separation progress restarts; near geometry resumes interaction.
                 candidate.separation_started_at = None
+                candidate.separation_last_at = None
+                candidate.separation_observed_seconds = 0.0
                 if distance <= spec.interaction_wrist_distance:
                     candidate.phase = HandoffPhase.INTERACTION
                     candidate.interaction_last_at = now
@@ -464,10 +517,13 @@ class HandoffTemporalTracker:
             if distance >= spec.recovery_wrist_distance:
                 if candidate.recovery_started_at is None:
                     candidate.recovery_started_at = now
-                if (
-                    _seconds(now, candidate.recovery_started_at)
-                    >= spec.recovery_dwell_seconds
-                ):
+                    candidate.recovery_observed_seconds = 0.0
+                elif candidate.recovery_last_at is not None:
+                    candidate.recovery_observed_seconds += _seconds(
+                        now, candidate.recovery_last_at
+                    )
+                candidate.recovery_last_at = now
+                if candidate.recovery_observed_seconds >= spec.recovery_dwell_seconds:
                     self._candidates.pop(key, None)
                     return self._result(
                         key,
@@ -478,6 +534,9 @@ class HandoffTemporalTracker:
                     )
             else:
                 candidate.recovery_started_at = None
+                candidate.recovery_last_at = None
+                candidate.recovery_observed_seconds = 0.0
+
 
         return self._result(
             key,
@@ -500,14 +559,10 @@ class HandoffTemporalTracker:
         abort_reason: Optional[str] = None,
     ) -> HandoffTemporalResult:
         camera_id, generation, rule_id, pair_key = key
-        separation_duration = (
-            0.0
-            if candidate.separation_started_at is None
-            else _seconds(
-                candidate.completed_at or candidate.last_valid_evidence_at,
-                candidate.separation_started_at,
-            )
-        )
+        # Raw calibration facts are genuinely OBSERVED accumulated durations,
+        # never wall time spanning tolerated UNKNOWN intervals.
+        separation_duration = candidate.separation_duration
+
         return HandoffTemporalResult(
             camera_id=camera_id,
             stream_generation=generation,

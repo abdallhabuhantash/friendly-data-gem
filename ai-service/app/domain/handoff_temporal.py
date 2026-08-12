@@ -227,8 +227,11 @@ class HandoffTemporalResult:
     separation_distance_increase: float = 0.0
     interaction_started_at: Optional[datetime] = None
     separation_started_at: Optional[datetime] = None
+    #: GENUINELY OBSERVED accumulated dwell, not wall time: tolerated UNKNOWN /
+    #: degraded / missing-pair intervals pause accumulation and are never credited.
     interaction_duration_seconds: float = 0.0
     separation_duration_seconds: float = 0.0
+
     completed_this_frame: bool = False
     completed_at: Optional[datetime] = None
     abort_reason: Optional[str] = None
