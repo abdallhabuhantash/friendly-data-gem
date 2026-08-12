@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """MANUAL offline evaluator for open-vocabulary paper evidence (Task 3E-B).
 
-This script trains NOTHING, changes no production behaviour and is never
-imported by the live runtime. Importing it loads no model, opens no video and
-downloads nothing: the detector, OpenCV and Ultralytics are imported lazily
+This script trains nothing, changes no production behaviour and is
+never imported by the live runtime. Importing it loads no model, opens no video
+and downloads nothing: the detector, OpenCV and Ultralytics are imported lazily
 inside the execution path.
 
 Everything is explicit: source, weights, prompts, device, image size, confidence
@@ -41,8 +41,12 @@ import os
 import sys
 from typing import Optional, Sequence
 
-# Allow running the script directly from the ai-service directory.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def _ensure_import_path() -> None:
+    """Allows running the script directly from the ai-service directory."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    _ensure_import_path()
 
     from app.ai.crop_transform import CropTransform
     from app.ai.open_vocab_paper_detector import (

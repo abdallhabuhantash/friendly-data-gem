@@ -91,6 +91,7 @@ def test_dataset_path_required_and_validated() -> None:
 
 
 def test_validation_split_and_paper_class_required(tmp_path: pathlib.Path) -> None:
+    pytest.importorskip("yaml")
     module = load_module()
 
     no_val = tmp_path / "no_val.yaml"

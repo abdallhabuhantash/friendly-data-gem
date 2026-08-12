@@ -130,8 +130,8 @@ class DescriptiveMetrics:
         return {
             "measurement_kind": "descriptive_only",
             "note": (
-                "No labelled ground truth exists, so precision/recall/accuracy/mAP "
-                "are intentionally not reported."
+                "Counts and distributions only: no labelled ground truth exists, so "
+                "no scoring metric is claimed."
             ),
             "frames_sampled": self.frames_sampled,
             "frames_with_detections": self.frames_with_detections,
@@ -298,9 +298,9 @@ def render_console_summary(report: EvaluationReport) -> str:
     lines.append("")
     lines.append(
         "Descriptive measurements only: no labelled ground truth exists, so no "
-        "precision/recall/accuracy/mAP is claimed. Zero detections means 'no paper "
-        "evidence was detected by this model', not 'there is no paper'. Review each "
-        "detection manually as true_paper / false_positive / uncertain."
+        "scoring metric is claimed. Zero detections means 'no paper evidence was "
+        "detected by this model', not 'there is no paper'. Review each detection "
+        "manually as true_paper / false_positive / uncertain."
     )
     return "\n".join(lines)
 
