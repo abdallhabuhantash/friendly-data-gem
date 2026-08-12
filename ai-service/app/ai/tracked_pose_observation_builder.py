@@ -15,7 +15,7 @@ evidence" can never be confused with "pose existed but could not be assigned".
 from __future__ import annotations
 
 from ..domain.observations import FrameObservations
-from ..domain.pose import COCO_17_KEYPOINTS, PoseFrameResult
+from ..domain.pose import COCO_17_KEYPOINTS, PoseFrameResult, PoseStatus
 from ..domain.pose_association import (
     PoseAssociationFrameResult,
     PoseAssociationFrameStatus,
@@ -27,6 +27,7 @@ from ..domain.tracked_pose_observations import (
     TrackedPoseKeypoint,
     TrackedPoseObservation,
     UnresolvedPoseDiagnostic,
+    strict_index,
 )
 from .region_resolver import relative_point
 
