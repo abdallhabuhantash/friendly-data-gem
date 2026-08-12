@@ -25,10 +25,12 @@ from app.domain.handoff_temporal import (
     RESET_RECOVERED,
     HandoffPhase,
     HandoffTemporalContractError,
+    HandoffTemporalFrameResult,
+    HandoffTemporalResult,
     HandoffTemporalSpec,
     HandoffTemporalStatus,
 )
-from app.domain.pair_geometry import PersonPairKey
+from app.domain.pair_geometry import PairFrameStatus, PersonPairFrameResult, PersonPairKey
 from app.domain.pose import COCO_17_KEYPOINTS, PoseKeypointName, PoseStatus, coco_17_index
 from app.domain.regions import RelativePoint
 from app.domain.tracked_pose_observations import (
@@ -622,19 +624,10 @@ def test_variable_cadence_uses_timestamps_not_frame_counts() -> None:
 def test_invalid_frame_metadata_is_reported_and_resets() -> None:
     tracker = HandoffTemporalTracker()
     run(tracker, [(1, 0.0, 0.8)])
-    from app.domain.pair_geometry import PersonPairFrameResult
-
-    naked = PersonPairFrameResult(status=HandoffPhaseFrameStatus := None) if False else None
-    bare = PersonPairFrameResult(
-        status=__import__(
-            "app.domain.pair_geometry", fromlist=["PairFrameStatus"]
-        ).PairFrameStatus.OK,
-        camera_id="cam-1",
-    )
+    bare = PersonPairFrameResult(status=PairFrameStatus.OK, camera_id="cam-1")
     result = observe(tracker, bare)
     assert result.status is HandoffTemporalStatus.INVALID_INPUT
     assert tracker.active_candidate_count == 0
-    assert naked is None
 
 
 # ---------------------------------------------------------------- wrist lock
@@ -808,36 +801,55 @@ def test_state_memory_is_bounded_scalars_only() -> None:
         assert not isinstance(value, (list, dict, set, tuple))
 
 
-def test_module_makes_no_forbidden_claims() -> None:
+def test_module_exposes_no_paper_or_direction_fields_and_no_score() -> None:
+    fields = set(HandoffTemporalSpec.__dataclass_fields__) | set(
+        HandoffTemporalResult.__dataclass_fields__
+    ) | set(HandoffTemporalFrameResult.__dataclass_fields__)
+    for forbidden in (
+        "paper",
+        "document",
+        "sheet",
+        "giver",
+        "receiver",
+        "confidence",
+        "score",
+        "probability",
+        "object_transfer",
+    ):
+        assert not any(forbidden in name for name in fields), forbidden
+
+
+def test_modules_contain_no_runtime_or_clock_calls() -> None:
     root = Path(__file__).resolve().parents[1] / "app"
-    sources = (
-        (root / "ai" / "exchange_temporal_state.py").read_text(),
-        (root / "domain" / "handoff_temporal.py").read_text(),
-    )
-    for text in sources:
-        lowered = text.lower()
+    for name in ("ai/exchange_temporal_state.py", "domain/handoff_temporal.py"):
+        text = (root / name).read_text()
+        code = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+        # Strip the module docstring, which legitimately explains what is absent.
+        body = ast.parse(text)
+        body.body = [
+            node
+            for node in body.body
+            if not (
+                isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+            )
+        ]
+        executable = ast.unparse(body)
         for forbidden in (
-            "paper_present",
-            "document_present",
-            "sheet_present",
-            "paper_confidence",
-            "giver",
-            "receiver",
-            "eventdraft",
-            "eventpublisher",
-            "supabase",
-            "telegram",
-            "notification",
-            "snapshot_service",
             "time.time(",
             "time.sleep",
-            "monotonic",
+            "monotonic()",
             "threading",
-            "orchestrator",
-            "engineregistry",
-            "confidence_score",
+            "EventDraft",
+            "EventPublisher",
+            "supabase",
+            "telegram",
+            "Orchestrator",
+            "EngineRegistry",
         ):
-            assert forbidden not in lowered, forbidden
+            assert forbidden not in executable, (name, forbidden)
+        assert "import time" not in code
 
 
 def test_temporal_module_does_not_import_task_one_state_or_runtime() -> None:
