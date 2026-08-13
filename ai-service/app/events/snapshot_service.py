@@ -46,11 +46,19 @@ def annotate_frame(
     camera_name: str,
     associations: Optional[dict[str, AssociationResult]] = None,
     timestamp: Optional[datetime] = None,
+    subject_labels: Optional[dict[str, str]] = None,
 ):
-    """Draws persons, phones and association state onto a copy of the frame."""
+    """Draws persons, phones and association state onto a copy of the frame.
+
+    ``subject_labels`` maps a raw tracking id to its anonymous exam-session
+    label (``S001``). A raw track without an owning subject is drawn as
+    ``UNRESOLVED``: the overlay never invents an identity, and never shows a
+    name, a university ID or any personal data.
+    """
     canvas = frame.copy()
     height, width = canvas.shape[:2]
     links = associations or {}
+    labels = subject_labels or {}
 
     person_boxes: dict[str, Detection] = {
         person.tracking_id: person for person in detections.persons if person.tracking_id
@@ -59,7 +67,12 @@ def annotate_frame(
     for person in detections.persons:
         x1, y1, x2, y2 = person.bbox.to_pixels(width, height)
         cv2.rectangle(canvas, (x1, y1), (x2, y2), COLOR_PERSON, 1)
-        tag = f"PERSON {person.tracking_id or '--'}  {person.confidence:.2f}"
+        raw_id = person.tracking_id or ""
+        if labels:
+            subject = labels.get(raw_id) or "UNRESOLVED"
+            tag = f"{subject}  ({raw_id or '--'})  {person.confidence:.2f}"
+        else:
+            tag = f"PERSON {raw_id or '--'}  {person.confidence:.2f}"
         _label(canvas, tag, (x1, max(14, y1)), COLOR_PERSON)
 
     for index, phone in enumerate(detections.phones):
