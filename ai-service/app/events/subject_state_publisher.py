@@ -4,9 +4,10 @@ The inference thread only *buffers* what changed; the control loop flushes to
 Supabase. A failed flush is retried on the next tick and never turns into a
 guessed value: nothing is written that the registry did not observe.
 
-Only anonymous facts leave this process: subject number/label, tracking status,
-timestamps, the smoothed observation region, raw track segments and the
-association confidence. No name, no university ID, no image, no biometrics.
+Only anonymous facts leave this process: subject number/label, lifecycle, track
+association state, timestamps, the current observation region with its motion
+estimate, raw track segments and the recovery confidence. No name, no university
+ID, no image, no biometrics.
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ from ..domain.session_subjects import (
     SubjectEvent,
     SubjectEventKind,
     SubjectFrameResult,
+    SubjectLifecycle,
     SubjectSnapshot,
-    SubjectTrackingStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,13 +89,14 @@ class SubjectStatePublisher:
             "exam_session_id": exam_session_id,
             "subject_number": subject.subject_number,
             "camera_id": camera_id,
-            "tracking_status": subject.status.value,
+            "lifecycle_status": subject.lifecycle.value,
+            "track_association": subject.association.value,
+            "active_raw_tracking_id": subject.active_tracking_id,
             "first_seen_at": subject.first_seen_at,
             "last_seen_at": subject.last_seen_at,
             "ended_at": subject.ended_at,
-            "anchor": subject.anchor,
-            "anchor_updated_at": subject.anchor_updated_at,
-            "reassociation_count": subject.reassociation_count,
+            "motion": subject.motion,
+            "reassociation_count": subject.recovery_count,
             "last_association_confidence": subject.last_association_confidence,
         }
         self._last_heartbeat[key] = subject.last_seen_at
@@ -102,7 +104,10 @@ class SubjectStatePublisher:
     def _queue_track(
         self, exam_session_id: str, event: SubjectEvent, subject: SubjectSnapshot
     ) -> None:
-        if event.kind is SubjectEventKind.TRACK_ATTACHED and event.tracking_id:
+        if (
+            event.kind in (SubjectEventKind.TRACK_BOUND, SubjectEventKind.TRACK_RECOVERED)
+            and event.tracking_id
+        ):
             self._track_writes.append(
                 {
                     "operation": "open",
@@ -112,9 +117,10 @@ class SubjectStatePublisher:
                     "started_at": event.at,
                     "association_method": event.method.value if event.method else "initial",
                     "association_confidence": event.association_confidence,
+                    "start_reason": event.kind.value,
                 }
             )
-        elif event.kind in (SubjectEventKind.TRACK_DETACHED, SubjectEventKind.SUBJECT_ENDED):
+        elif event.kind in (SubjectEventKind.TRACK_RELEASED, SubjectEventKind.ENDED):
             if event.tracking_id:
                 self._track_writes.append(
                     {
@@ -122,12 +128,13 @@ class SubjectStatePublisher:
                         "exam_session_id": exam_session_id,
                         "raw_tracking_id": event.tracking_id,
                         "ended_at": event.at,
+                        "end_reason": event.reason,
                     }
                 )
 
     def _maybe_heartbeat(self, result: SubjectFrameResult, subject: SubjectSnapshot) -> None:
-        """Keeps `last_seen_at` fresh for stable subjects, throttled."""
-        if subject.status is SubjectTrackingStatus.ENDED:
+        """Keeps `last_seen_at` fresh for observed subjects, throttled."""
+        if subject.lifecycle is SubjectLifecycle.ENDED:
             return
         key = (result.exam_session_id, subject.subject_number)
         if key not in self._row_ids and key not in self._subject_writes:
@@ -176,12 +183,14 @@ class SubjectStatePublisher:
                         started_at=entry["started_at"],
                         association_method=entry["association_method"],
                         association_confidence=entry["association_confidence"],
+                        start_reason=entry.get("start_reason"),
                     )
                 else:
                     self._repository.close_subject_track(
                         exam_session_id=entry["exam_session_id"],
                         raw_tracking_id=entry["raw_tracking_id"],
                         ended_at=entry["ended_at"],
+                        end_reason=entry.get("end_reason"),
                     )
             except Exception as exc:
                 logger.warning("Subject track write failed: %s", type(exc).__name__)

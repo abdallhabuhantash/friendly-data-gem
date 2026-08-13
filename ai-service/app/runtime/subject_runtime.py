@@ -20,6 +20,7 @@ from typing import Iterable, Optional
 
 from ..domain.observations import FrameObservations
 from ..domain.session_subjects import (
+    SubjectEventKind,
     SubjectFrameResult,
     SubjectRegistryConfig,
     SubjectSnapshot,
@@ -39,16 +40,35 @@ class ArmedSession:
 
 
 class _SessionState:
-    def __init__(self, session: ArmedSession, config: SubjectRegistryConfig) -> None:
+    def __init__(
+        self,
+        session: ArmedSession,
+        config: SubjectRegistryConfig,
+        allocator=None,  # noqa: ANN001 - Optional[Callable[[str], int]]
+    ) -> None:
         self.session = session
         self.config = config
         self.registries: dict[str, ExamSubjectRegistry] = {}
         self._next_number = 1
+        self._external_allocator = allocator
 
     def allocate(self) -> int:
+        """Monotonic per-session number. Never decreases, never reuses.
+
+        Multi-camera sessions share this allocator, and a shared allocator may
+        be injected by the caller so numbering is atomic across processes.
+        """
+        if self._external_allocator is not None:
+            number = int(self._external_allocator(self.session.exam_session_id))
+            self._next_number = max(self._next_number, number + 1)
+            return number
         number = self._next_number
         self._next_number += 1
         return number
+
+    def reserve(self, highest_number: int) -> None:
+        """Never hand out a number that a previous run already assigned."""
+        self._next_number = max(self._next_number, int(highest_number) + 1)
 
     def registry_for(self, camera_id: str) -> ExamSubjectRegistry:
         registry = self.registries.get(camera_id)
@@ -66,9 +86,15 @@ class _SessionState:
 class SubjectRuntime:
     """Anonymous subject tracking for every armed exam session."""
 
-    def __init__(self, config: SubjectRegistryConfig, publisher) -> None:  # noqa: ANN001
+    def __init__(
+        self,
+        config: SubjectRegistryConfig,
+        publisher,  # noqa: ANN001
+        number_allocator=None,  # noqa: ANN001 - Optional[Callable[[str], int]]
+    ) -> None:
         self._config = config
         self._publisher = publisher
+        self._number_allocator = number_allocator
         self._lock = threading.Lock()
         self._sessions: dict[str, _SessionState] = {}
         #: camera_id -> exam_session_id (a camera serves one armed session)
@@ -81,7 +107,7 @@ class SubjectRuntime:
         with self._lock:
             if session.exam_session_id in self._sessions:
                 return
-            state = _SessionState(session, self._config)
+            state = _SessionState(session, self._config, self._number_allocator)
             self._sessions[session.exam_session_id] = state
             for camera_id in session.camera_ids:
                 self._camera_sessions[camera_id] = session.exam_session_id
@@ -131,6 +157,13 @@ class SubjectRuntime:
                         for camera_id in session.camera_ids:
                             self._camera_sessions[camera_id] = session_id
 
+    def reserve_numbers(self, exam_session_id: str, highest_number: int) -> None:
+        """Never re-issue a number a previous run of this session used."""
+        with self._lock:
+            state = self._sessions.get(exam_session_id)
+            if state is not None:
+                state.reserve(highest_number)
+
     def is_armed(self, exam_session_id: str) -> bool:
         with self._lock:
             return exam_session_id in self._sessions
@@ -159,14 +192,35 @@ class SubjectRuntime:
         return result
 
     def reset_camera(self, camera_id: str) -> None:
-        """A new stream incarnation must not inherit subject state."""
+        """A new stream incarnation must not inherit raw-track bindings.
+
+        Existing subjects keep their numbers reserved: the registry is rebuilt
+        with the same subjects marked LOST/UNRESOLVED, so a person re-observed
+        after a stream restart can never be given a second label, and the old
+        raw ids of the previous incarnation are not trusted.
+        """
+        moment = datetime.now(timezone.utc)
         with self._lock:
             session_id = self._camera_sessions.get(camera_id)
             state = self._sessions.get(session_id) if session_id else None
-            registry = state.registries.pop(camera_id, None) if state else None
-        if registry is None or state is None:
-            return
-        events = registry.close(ended_at=datetime.now(timezone.utc))
+            previous = state.registries.pop(camera_id, None) if state else None
+            if previous is None or state is None:
+                return
+            carried = previous.snapshots()
+            registry = state.registry_for(camera_id)
+            restored = registry.restore(
+                (item.subject_number, item.first_seen_at, item.last_seen_at)
+                for item in carried
+                if item.is_open
+            )
+            highest = max((item.subject_number for item in carried), default=0)
+            state.reserve(highest)
+        release_events = tuple(
+            event
+            for event in previous.close(ended_at=moment)
+            if event.kind is not SubjectEventKind.ENDED
+        )
+        events = release_events + restored
         if events:
             self._publisher.record_events(
                 exam_session_id=state.session.exam_session_id,
@@ -192,6 +246,9 @@ class SubjectRuntime:
                     "cameras": sorted(state.registries),
                     "active_subjects": sum(
                         registry.active_subject_count for registry in state.registries.values()
+                    ),
+                    "subjects_total": sum(
+                        registry.subject_count for registry in state.registries.values()
                     ),
                 }
                 for session_id, state in self._sessions.items()

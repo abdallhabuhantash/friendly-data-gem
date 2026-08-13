@@ -36,6 +36,40 @@ explicitly **not**:
 - a student name
 - a raw YOLO / tracker ID
 
+## 3b. A subject number is immortal, owned and mobile
+
+Once `S017` has been assigned to a physical person inside an exam session:
+
+- it is **never renumbered**, never transferred to another person and never
+  reused — not after a tracker id change, not after a stream restart, not after
+  the person is lost entirely;
+- it belongs to **exactly one** person, and that person has exactly one number,
+  so a raw tracking id is owned by at most one subject at a time;
+- it is **not** tied to a seat, a desk, a place or a bounding box. Standing up,
+  walking across the hall and sitting somewhere else are normal and cost the
+  subject nothing.
+
+Existence and binding are two separate facts, and are stored separately:
+
+```text
+lifecycle    ACTIVE -> TEMPORARILY_LOST -> LOST -> ENDED   (existence)
+association  CONFIRMED / PROVISIONAL / UNRESOLVED / CONFLICT (raw-track binding)
+```
+
+A subject is **never** ended by a timeout. `LOST` means "not observed now, number
+still reserved"; only the end of the exam session produces `ENDED`. Numbers are
+allocated by the database (`allocate_session_subject_number`), so numbering stays
+atomic, monotonic and unique per session across cameras and service instances,
+and database triggers reject any attempt to renumber, re-parent or delete a
+subject while its session exists.
+
+Ambiguity is preserved instead of resolved: an impossible jump or a duplicated
+raw id becomes `CONFLICT`, two equally plausible owners stay `UNRESOLVED`, and a
+raw track that plausibly continues a lost subject is held as `UNRESOLVED` rather
+than being given a second number. Recovery evidence is geometry and motion only
+(predicted position, overlap, plausible speed) — never appearance, clothing
+colour, face or any biometric signature.
+
 ## 4. Raw tracker identity is unstable
 
 Raw tracking IDs are re-assigned, lost and recreated during an exam whenever
@@ -99,14 +133,16 @@ Live view, detection, events and review all function fully with every subject
 unresolved. Identity resolution is an optional enrichment layer, never a
 prerequisite.
 
-## Status of this foundation task
+## Status
 
 Implemented: exam sessions, optional session→camera links, invigilator session
-metadata, roster records, manual roster entry, spreadsheet roster import, and
-the Exam Sessions UI.
+metadata, roster records, manual roster entry, spreadsheet roster import, the
+Exam Sessions UI, and the immutable anonymous subject registry (creation,
+exclusive raw-track ownership, mobility-aware short-gap recovery, lifecycle vs
+association reporting, atomic per-session numbering, and anonymous labels on the
+annotated stream, where an unowned raw track is drawn as `UNRESOLVED`).
 
-Deliberately **not** implemented here: session-subject runtime (`S001`/`S002`
-creation), tracking→subject reassociation, event identity resolution,
+Deliberately **not** implemented here: event identity resolution,
 `event_subjects`, subject thumbnails, Locate Subject, recording/clips, paper
 detector runtime integration, seats, QR check-in, facial recognition, and the
 Start Exam Session runtime action.

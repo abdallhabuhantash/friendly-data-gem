@@ -503,38 +503,73 @@ export type Database = {
         }
         Relationships: []
       }
+      session_subject_sequences: {
+        Row: {
+          exam_session_id: string
+          next_number: number
+          updated_at: string
+        }
+        Insert: {
+          exam_session_id: string
+          next_number?: number
+          updated_at?: string
+        }
+        Update: {
+          exam_session_id?: string
+          next_number?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_subject_sequences_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: true
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       session_subject_tracks: {
         Row: {
           association_confidence: number | null
           association_method: string
+          association_state: string
           created_at: string
+          end_reason: string | null
           ended_at: string | null
           exam_session_id: string
           id: string
           raw_tracking_id: string
           session_subject_id: string
+          start_reason: string | null
           started_at: string
         }
         Insert: {
           association_confidence?: number | null
           association_method?: string
+          association_state?: string
           created_at?: string
+          end_reason?: string | null
           ended_at?: string | null
           exam_session_id: string
           id?: string
           raw_tracking_id: string
           session_subject_id: string
+          start_reason?: string | null
           started_at?: string
         }
         Update: {
           association_confidence?: number | null
           association_method?: string
+          association_state?: string
           created_at?: string
+          end_reason?: string | null
           ended_at?: string | null
           exam_session_id?: string
           id?: string
           raw_tracking_id?: string
           session_subject_id?: string
+          start_reason?: string | null
           started_at?: string
         }
         Relationships: [
@@ -556,11 +591,7 @@ export type Database = {
       }
       session_subjects: {
         Row: {
-          anchor_height: number | null
-          anchor_updated_at: string | null
-          anchor_width: number | null
-          anchor_x: number | null
-          anchor_y: number | null
+          active_raw_tracking_id: string | null
           camera_id: string | null
           created_at: string
           ended_at: string | null
@@ -568,19 +599,23 @@ export type Database = {
           first_seen_at: string
           id: string
           last_association_confidence: number | null
+          last_bbox_height: number | null
+          last_bbox_width: number | null
+          last_bbox_x: number | null
+          last_bbox_y: number | null
           last_seen_at: string
+          lifecycle_status: string
+          motion_updated_at: string | null
           reassociation_count: number
           subject_label: string
           subject_number: number
-          tracking_status: string
+          track_association: string
           updated_at: string
+          velocity_x: number | null
+          velocity_y: number | null
         }
         Insert: {
-          anchor_height?: number | null
-          anchor_updated_at?: string | null
-          anchor_width?: number | null
-          anchor_x?: number | null
-          anchor_y?: number | null
+          active_raw_tracking_id?: string | null
           camera_id?: string | null
           created_at?: string
           ended_at?: string | null
@@ -588,19 +623,23 @@ export type Database = {
           first_seen_at?: string
           id?: string
           last_association_confidence?: number | null
+          last_bbox_height?: number | null
+          last_bbox_width?: number | null
+          last_bbox_x?: number | null
+          last_bbox_y?: number | null
           last_seen_at?: string
+          lifecycle_status?: string
+          motion_updated_at?: string | null
           reassociation_count?: number
           subject_label?: string
           subject_number: number
-          tracking_status?: string
+          track_association?: string
           updated_at?: string
+          velocity_x?: number | null
+          velocity_y?: number | null
         }
         Update: {
-          anchor_height?: number | null
-          anchor_updated_at?: string | null
-          anchor_width?: number | null
-          anchor_x?: number | null
-          anchor_y?: number | null
+          active_raw_tracking_id?: string | null
           camera_id?: string | null
           created_at?: string
           ended_at?: string | null
@@ -608,12 +647,20 @@ export type Database = {
           first_seen_at?: string
           id?: string
           last_association_confidence?: number | null
+          last_bbox_height?: number | null
+          last_bbox_width?: number | null
+          last_bbox_x?: number | null
+          last_bbox_y?: number | null
           last_seen_at?: string
+          lifecycle_status?: string
+          motion_updated_at?: string | null
           reassociation_count?: number
           subject_label?: string
           subject_number?: number
-          tracking_status?: string
+          track_association?: string
           updated_at?: string
+          velocity_x?: number | null
+          velocity_y?: number | null
         }
         Relationships: [
           {
@@ -697,6 +744,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_session_subject_number: {
+        Args: { _exam_session_id: string }
+        Returns: number
+      }
       has_any_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {

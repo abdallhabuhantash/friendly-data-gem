@@ -25,11 +25,13 @@ CONFIG = SubjectRegistryConfig(
     min_seconds_to_qualify=0.2,
     short_gap_seconds=2.0,
     lost_after_seconds=0.5,
-    end_after_seconds=4.0,
-    reassociation_min_confidence=0.5,
-    reassociation_margin=0.15,
-    anchor_smoothing=0.3,
+    recovery_min_confidence=0.5,
+    recovery_margin=0.15,
+    plausible_candidate_score=0.35,
+    motion_smoothing=0.3,
     pending_gap_seconds=0.5,
+    max_speed_per_second=1.0,
+    trajectory_length=8,
 )
 
 
@@ -109,17 +111,19 @@ def test_flush_writes_anonymous_facts_only():
     assert len(repo.subjects) == 1
     payload = repo.subjects[0]
     assert payload["subject_number"] == 1
-    assert payload["tracking_status"] == "stable"
+    assert payload["lifecycle_status"] == "active"
+    assert payload["track_association"] == "confirmed"
     assert set(payload) == {
         "exam_session_id",
         "subject_number",
         "camera_id",
-        "tracking_status",
+        "lifecycle_status",
+        "track_association",
+        "active_raw_tracking_id",
         "first_seen_at",
         "last_seen_at",
         "ended_at",
-        "anchor",
-        "anchor_updated_at",
+        "motion",
         "reassociation_count",
         "last_association_confidence",
     }
@@ -149,7 +153,7 @@ def test_disarm_closes_subjects_and_segments():
     runtime.disarm("session-1", ended_at=at(90.0))
     publisher.flush()
     assert not runtime.is_armed("session-1")
-    assert repo.subjects[-1]["tracking_status"] == "ended"
+    assert repo.subjects[-1]["lifecycle_status"] == "ended"
     assert repo.closed[-1]["raw_tracking_id"] == "7"
     assert runtime.observe(frame("cam-1", "7", BOX, at(91.0))) is None
 
@@ -164,7 +168,8 @@ def test_sync_arms_and_disarms_to_match_the_console():
     assert runtime.armed_session_ids == ()
 
 
-def test_camera_reset_closes_that_cameras_subjects_only():
+def test_camera_reset_keeps_subject_numbers_and_releases_raw_tracks_only():
+    """A restarted stream must never renumber or duplicate a person."""
     repo, publisher, runtime = build()
     runtime.arm(ArmedSession("session-1", ("cam-1", "cam-2")))
     for index in range(3):
@@ -172,9 +177,22 @@ def test_camera_reset_closes_that_cameras_subjects_only():
         runtime.observe(frame("cam-2", "9", BOX, at(index * 0.2)))
     runtime.reset_camera("cam-1")
     publisher.flush()
-    remaining = {item.label: item.status.value for item in runtime.snapshots("session-1")}
-    assert remaining == {"S002": "stable"}
-    assert any(row["tracking_status"] == "ended" for row in repo.subjects)
+    states = {
+        item.label: (item.lifecycle.value, item.association.value)
+        for item in runtime.snapshots("session-1")
+    }
+    assert states == {
+        "S001": ("lost", "unresolved"),
+        "S002": ("active", "confirmed"),
+    }
+    # The raw id of the previous incarnation is closed, the subject is not ended.
+    assert repo.closed[-1]["raw_tracking_id"] == "7"
+    assert all(row["lifecycle_status"] != "ended" for row in repo.subjects)
+    # The next person on that camera gets a NEW number, never S001 again.
+    for index in range(3):
+        result = runtime.observe(frame("cam-1", "88", BOX, at(20.0 + index * 0.2)))
+    assert result is not None
+    assert sorted(item.label for item in result.subjects) == ["S001", "S003"]
 
 
 def test_status_reports_measured_facts_only():
@@ -185,6 +203,7 @@ def test_status_reports_measured_facts_only():
         runtime.observe(frame("cam-1", "7", BOX, at(index * 0.2)))
     status = runtime.status()
     assert status["armed_sessions"]["session-1"]["active_subjects"] == 1
+    assert status["armed_sessions"]["session-1"]["subjects_total"] == 1
     assert status["armed_sessions"]["session-1"]["cameras"] == ["cam-1"]
 
 
@@ -197,6 +216,35 @@ def test_runtime_never_touches_roster_tables():
     )
     for forbidden in ("exam_roster_students", "university_id", "full_name"):
         assert forbidden not in source
+
+
+def test_shared_allocator_is_used_when_injected():
+    """Numbering may be delegated to the database so it stays atomic."""
+    repo = FakeRepository()
+    publisher = SubjectStatePublisher(repo, heartbeat_seconds=5.0)
+    issued: list[str] = []
+
+    def allocate(exam_session_id: str) -> int:
+        issued.append(exam_session_id)
+        return 40 + len(issued)
+
+    runtime = SubjectRuntime(CONFIG, publisher, number_allocator=allocate)
+    runtime.arm(ArmedSession("session-1", ("cam-1",)))
+    for index in range(3):
+        result = runtime.observe(frame("cam-1", "7", BOX, at(index * 0.2)))
+    assert result is not None
+    assert [item.label for item in result.subjects] == ["S041"]
+    assert issued == ["session-1"]
+
+
+def test_reserved_numbers_are_never_reissued_after_a_restart():
+    repo, publisher, runtime = build()
+    runtime.arm(ArmedSession("session-1", ("cam-1",)))
+    runtime.reserve_numbers("session-1", 17)
+    for index in range(3):
+        result = runtime.observe(frame("cam-1", "7", BOX, at(index * 0.2)))
+    assert result is not None
+    assert [item.label for item in result.subjects] == ["S018"]
 
 
 def test_config_must_be_explicit():

@@ -182,7 +182,13 @@ class Orchestrator:
             if config is None:
                 self.subjects = None
                 return
-            self.subjects = SubjectRuntime(config, self.subject_publisher)
+            # Numbering is allocated by the database so it stays atomic,
+            # monotonic and unique per exam session across cameras/instances.
+            self.subjects = SubjectRuntime(
+                config,
+                self.subject_publisher,
+                number_allocator=self.repository.allocate_subject_number,
+            )
         except Exception as exc:
             self.subjects = None
             self._subject_problems.append(
@@ -531,17 +537,6 @@ class Orchestrator:
                     margin=self.settings.association_margin,
                 )
 
-        annotated = annotate_frame(
-            frame,
-            detections,
-            camera_name=camera.name,
-            associations=associations,
-            timestamp=datetime.now(),
-        )
-        jpeg = encode_jpeg(annotated)
-        if jpeg:
-            self.stream_hub.publish(camera.id, jpeg)
-
         # The observation view is derived from THIS frame and is independent of
         # rule configuration, so pose scheduling never depends on Task 1 rules.
         now_mono = time.monotonic()
@@ -557,13 +552,31 @@ class Orchestrator:
         # Anonymous subject identity is derived from the SAME observation view and
         # is completely independent of rule configuration: it never creates
         # events and never influences Task 1 thresholds.
+        subject_labels: dict[str, str] = {}
         if self.subjects is not None:
             try:
-                self.subjects.observe(observations)
+                subject_result = self.subjects.observe(observations)
+                if subject_result is not None:
+                    subject_labels = dict(subject_result.labels)
             except Exception as exc:
                 logger.warning(
                     "Anonymous subject tracking failed for one frame: %s", type(exc).__name__
                 )
+
+        annotated = annotate_frame(
+            frame,
+            detections,
+            camera_name=camera.name,
+            associations=associations,
+            timestamp=datetime.now(),
+            # Operators see the anonymous label of THIS frame, or UNRESOLVED —
+            # never an invented identity for an unowned raw track.
+            subject_labels=subject_labels,
+        )
+        jpeg = encode_jpeg(annotated)
+        if jpeg:
+            self.stream_hub.publish(camera.id, jpeg)
+
 
         if not applicable_rules:
             return observations
@@ -712,7 +725,9 @@ class Orchestrator:
             self.subject_publisher.bind_existing(
                 exam_session_id, self.repository.existing_subject_rows(exam_session_id)
             )
+            history = self.repository.open_subject_history(exam_session_id)
         except Exception as exc:
+            history = []
             logger.warning("Existing subject rows could not be read: %s", type(exc).__name__)
         self.subjects.arm(
             ArmedSession(
@@ -721,6 +736,13 @@ class Orchestrator:
                 started_at=started_at,
             )
         )
+        # Numbers used by an earlier run of this session stay reserved forever.
+        highest = max(
+            (int(row.get("subject_number") or 0) for row in history),
+            default=0,
+        )
+        if highest:
+            self.subjects.reserve_numbers(exam_session_id, highest)
         if status != "active":
             self.repository.set_exam_session_runtime(
                 exam_session_id, status="active", started_at=started_at

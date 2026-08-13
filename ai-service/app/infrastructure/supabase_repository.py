@@ -282,22 +282,60 @@ class SupabaseRepository:
             if row.get("subject_number") is not None
         }
 
+    def open_subject_history(self, exam_session_id: str) -> list[dict[str, Any]]:
+        """Subjects a previous run created, so their numbers stay reserved."""
+        response = (
+            self._client.table("session_subjects")
+            .select("subject_number,first_seen_at,last_seen_at,lifecycle_status")
+            .eq("exam_session_id", exam_session_id)
+            .neq("lifecycle_status", "ended")
+            .order("subject_number")
+            .execute()
+        )
+        return [dict(row) for row in (response.data or [])]
+
+    def allocate_subject_number(self, exam_session_id: str) -> int:
+        """Atomic, gap-free, monotonic per-session number from the database.
+
+        Delegating to the database is what makes numbering safe when several
+        cameras — or several service instances — create subjects concurrently.
+        """
+        response = self._client.rpc(
+            "allocate_session_subject_number",
+            {"_exam_session_id": exam_session_id},
+        ).execute()
+        number = response.data
+        if isinstance(number, list):
+            number = number[0] if number else None
+        if number is None:
+            raise RuntimeError("subject number allocation returned no value")
+        return int(number)
+
     def upsert_session_subject(self, payload: dict[str, Any]) -> Optional[str]:
-        """Anonymous subject state only: number, status, times, region."""
-        anchor = payload.get("anchor")
+        """Anonymous subject state only: number, lifecycle, times, motion.
+
+        ``subject_number`` is written on insert and never changed afterwards; the
+        database rejects any attempt to renumber or re-parent a subject.
+        """
+        motion = payload.get("motion")
+        bbox = None if motion is None else motion.last_bbox
         row: dict[str, Any] = {
             "exam_session_id": payload["exam_session_id"],
             "subject_number": int(payload["subject_number"]),
             "camera_id": payload.get("camera_id"),
-            "tracking_status": payload["tracking_status"],
+            "lifecycle_status": payload["lifecycle_status"],
+            "track_association": payload["track_association"],
+            "active_raw_tracking_id": payload.get("active_raw_tracking_id"),
             "first_seen_at": _iso(payload.get("first_seen_at")),
             "last_seen_at": _iso(payload.get("last_seen_at")),
             "ended_at": _iso(payload.get("ended_at")),
-            "anchor_x": None if anchor is None else round(float(anchor.x), 6),
-            "anchor_y": None if anchor is None else round(float(anchor.y), 6),
-            "anchor_width": None if anchor is None else round(float(anchor.width), 6),
-            "anchor_height": None if anchor is None else round(float(anchor.height), 6),
-            "anchor_updated_at": _iso(payload.get("anchor_updated_at")),
+            "last_bbox_x": None if bbox is None else round(float(bbox.x), 6),
+            "last_bbox_y": None if bbox is None else round(float(bbox.y), 6),
+            "last_bbox_width": None if bbox is None else round(float(bbox.width), 6),
+            "last_bbox_height": None if bbox is None else round(float(bbox.height), 6),
+            "velocity_x": None if motion is None else round(float(motion.velocity_x), 6),
+            "velocity_y": None if motion is None else round(float(motion.velocity_y), 6),
+            "motion_updated_at": None if motion is None else _iso(motion.updated_at),
             "reassociation_count": int(payload.get("reassociation_count") or 0),
             "last_association_confidence": payload.get("last_association_confidence"),
         }
@@ -321,6 +359,7 @@ class SupabaseRepository:
         started_at: datetime,
         association_method: str,
         association_confidence: Optional[float],
+        start_reason: Optional[str] = None,
     ) -> None:
         """Records one raw-track segment. Raw ids are temporary labels only."""
         self._client.table("session_subject_tracks").insert(
@@ -331,12 +370,22 @@ class SupabaseRepository:
                 "started_at": _iso(started_at),
                 "association_method": association_method,
                 "association_confidence": association_confidence,
+                "association_state": "confirmed",
+                "start_reason": start_reason,
             }
         ).execute()
 
     def close_subject_track(
-        self, *, exam_session_id: str, raw_tracking_id: str, ended_at: datetime
+        self,
+        *,
+        exam_session_id: str,
+        raw_tracking_id: str,
+        ended_at: datetime,
+        end_reason: Optional[str] = None,
     ) -> None:
-        self._client.table("session_subject_tracks").update({"ended_at": _iso(ended_at)}).eq(
-            "exam_session_id", exam_session_id
-        ).eq("raw_tracking_id", raw_tracking_id).is_("ended_at", "null").execute()
+        self._client.table("session_subject_tracks").update(
+            {"ended_at": _iso(ended_at), "end_reason": end_reason}
+        ).eq("exam_session_id", exam_session_id).eq(
+            "raw_tracking_id", raw_tracking_id
+        ).is_("ended_at", "null").execute()
+
