@@ -49,8 +49,7 @@ export function SubjectsPanel({ session }: { session: ExamSession }) {
 
       {armed && rows.length === 0 && !subjects.isLoading && (
         <p className="text-xs text-muted-foreground">
-          Monitoring is armed. No person has been observed long enough to earn a subject label
-          yet.
+          Monitoring is armed. No person has been observed long enough to earn a subject label yet.
         </p>
       )}
 

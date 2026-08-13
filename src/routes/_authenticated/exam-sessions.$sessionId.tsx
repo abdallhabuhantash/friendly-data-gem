@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Panel } from "@/components/common/Panel";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -8,11 +8,14 @@ import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/ui/button";
 import { ExamSessionFormDialog } from "@/components/exams/ExamSessionFormDialog";
 import { RosterPanel } from "@/components/exams/RosterPanel";
+import { SubjectsPanel } from "@/components/exams/SubjectsPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { useCameras } from "@/hooks/use-monitoring";
 import {
+  useEndExamSession,
   useExamSession,
   useSetExamConfiguredStatus,
+  useStartExamSession,
   useUpdateExamSession,
 } from "@/hooks/use-exams";
 import { EXAM_STATUS_LABELS } from "@/lib/exam-validation";
@@ -45,6 +48,8 @@ function ExamSessionDetailPage() {
   const { isAdministrator } = useAuth();
   const update = useUpdateExamSession(sessionId);
   const setStatus = useSetExamConfiguredStatus(sessionId);
+  const start = useStartExamSession(sessionId);
+  const end = useEndExamSession(sessionId);
   const [editing, setEditing] = useState(false);
 
   const submit = async (input: ExamSessionInput) => {

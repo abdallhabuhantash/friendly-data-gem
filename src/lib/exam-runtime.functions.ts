@@ -96,7 +96,8 @@ async function assertAdministrator(context: { supabase: unknown; userId: string 
     _user_id: context.userId,
     _role: "administrator",
   });
-  if (error || data !== true) throw new Error("Only administrators can start or end an exam session.");
+  if (error || data !== true)
+    throw new Error("Only administrators can start or end an exam session.");
 }
 
 export const startExamSession = createServerFn({ method: "POST" })

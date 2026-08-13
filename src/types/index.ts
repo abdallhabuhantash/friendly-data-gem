@@ -346,11 +346,7 @@ export interface RosterStudentInput {
  * never upgrades ambiguous tracking evidence into a confident claim.
  */
 export type SubjectTrackingStatus =
-  | "stable"
-  | "temporarily_lost"
-  | "uncertain"
-  | "conflict"
-  | "ended";
+  "stable" | "temporarily_lost" | "uncertain" | "conflict" | "ended";
 
 /**
  * An anonymous exam-session subject (S001, S002, …).
