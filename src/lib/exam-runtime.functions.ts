@@ -18,7 +18,17 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const input = z.object({ examSessionId: z.string().uuid() });
 
-async function aiServiceCall(path: string): Promise<{ ok: true; body: unknown } | { ok: false; message: string }> {
+type AiRuntimeReply = {
+  armed: boolean;
+  examSessionId: string;
+  cameras: string[];
+  startedAt: string | null;
+  endedAt: string | null;
+};
+
+async function aiServiceCall(
+  path: string,
+): Promise<{ ok: true; body: AiRuntimeReply } | { ok: false; message: string }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: settings } = await supabaseAdmin
     .from("system_settings")
@@ -59,7 +69,17 @@ async function aiServiceCall(path: string): Promise<{ ok: true; body: unknown } 
       }
       return { ok: false, message: detail || `AI service returned ${response.status}.` };
     }
-    return { ok: true, body: text === "" ? null : JSON.parse(text) };
+    const parsed = (text === "" ? {} : JSON.parse(text)) as Record<string, unknown>;
+    return {
+      ok: true,
+      body: {
+        armed: parsed["armed"] === true,
+        examSessionId: String(parsed["exam_session_id"] ?? ""),
+        cameras: Array.isArray(parsed["cameras"]) ? (parsed["cameras"] as string[]) : [],
+        startedAt: typeof parsed["started_at"] === "string" ? parsed["started_at"] : null,
+        endedAt: typeof parsed["ended_at"] === "string" ? parsed["ended_at"] : null,
+      },
+    };
   } catch {
     return { ok: false, message: "The AI service is unreachable." };
   }
