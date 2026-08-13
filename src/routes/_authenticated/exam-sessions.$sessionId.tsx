@@ -88,13 +88,58 @@ function ExamSessionDetailPage() {
           <>
             <Panel
               title="Overview"
-              subtitle="Configured information only. Monitoring has not been started."
+              subtitle={
+                data.status === "active"
+                  ? "Monitoring is armed: anonymous subjects are being tracked."
+                  : "Configured information only. Monitoring has not been started."
+              }
               actions={
                 isAdministrator ? (
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                       <Pencil className="mr-1 size-3.5" /> Edit
                     </Button>
+                    {data.status === "ready" && (
+                      <Button
+                        size="sm"
+                        disabled={start.isPending}
+                        onClick={async () => {
+                          try {
+                            await start.mutateAsync();
+                            toast.success("Monitoring started for this exam session");
+                          } catch (caught) {
+                            toast.error(
+                              caught instanceof Error
+                                ? caught.message
+                                : "Monitoring could not be started.",
+                            );
+                          }
+                        }}
+                      >
+                        <Play className="mr-1 size-3.5" /> Start exam session
+                      </Button>
+                    )}
+                    {data.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={end.isPending}
+                        onClick={async () => {
+                          try {
+                            await end.mutateAsync();
+                            toast.success("Exam session ended");
+                          } catch (caught) {
+                            toast.error(
+                              caught instanceof Error
+                                ? caught.message
+                                : "The session could not be ended.",
+                            );
+                          }
+                        }}
+                      >
+                        <Square className="mr-1 size-3.5" /> End exam session
+                      </Button>
+                    )}
                     {data.status === "draft" && (
                       <Button
                         size="sm"
@@ -143,6 +188,8 @@ function ExamSessionDetailPage() {
             >
               <Overview session={data} cameras={cameras.data ?? []} />
             </Panel>
+
+            <SubjectsPanel session={data} />
 
             <RosterPanel examSessionId={data.id} canEdit={isAdministrator} />
 
