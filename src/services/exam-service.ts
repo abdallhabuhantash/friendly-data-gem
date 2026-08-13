@@ -12,6 +12,8 @@ import type {
   ExamSessionStatus,
   RosterStudent,
   RosterStudentInput,
+  SessionSubject,
+  SubjectTrackingStatus,
 } from "@/types";
 
 type SessionRow = Tables<"exam_sessions">;

@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { examSessionsService, rosterService } from "@/services/exam-service";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  examSessionsService,
+  rosterService,
+  sessionSubjectsService,
+} from "@/services/exam-service";
+import { endExamSession, startExamSession } from "@/lib/exam-runtime.functions";
 import type { ExamSessionInput, ExamSessionStatus, RosterStudentInput } from "@/types";
 
 export const useExamSessions = () =>
@@ -82,6 +90,66 @@ export const useImportRoster = (examSessionId: string) => {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (rows: RosterStudentInput[]) => rosterService.importMany(examSessionId, rows),
+    onSuccess: () => invalidate(examSessionId),
+  });
+};
+
+/**
+ * Anonymous monitored subjects of one exam session, kept live by the same
+ * realtime channel the AI service writes through. Read-only by design.
+ */
+export const useSessionSubjects = (examSessionId: string) => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ["session-subjects", examSessionId],
+    queryFn: () => sessionSubjectsService.list(examSessionId),
+    enabled: examSessionId !== "",
+  });
+
+  useEffect(() => {
+    if (examSessionId === "") return;
+    const channel = supabase
+      .channel(`session-subjects-${examSessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_subjects",
+          filter: `exam_session_id=eq.${examSessionId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["session-subjects", examSessionId] });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [examSessionId, queryClient]);
+
+  return query;
+};
+
+/**
+ * Start Exam Session: arms monitoring through the local AI service. The status
+ * only becomes `active` because the AI service confirmed and wrote it.
+ */
+export const useStartExamSession = (examSessionId: string) => {
+  const invalidate = useInvalidate();
+  const start = useServerFn(startExamSession);
+  return useMutation({
+    mutationFn: () => start({ data: { examSessionId } }),
+    onSuccess: () => invalidate(examSessionId),
+  });
+};
+
+/** End Exam Session: disarms monitoring and closes every anonymous subject. */
+export const useEndExamSession = (examSessionId: string) => {
+  const invalidate = useInvalidate();
+  const end = useServerFn(endExamSession);
+  return useMutation({
+    mutationFn: () => end({ data: { examSessionId } }),
     onSuccess: () => invalidate(examSessionId),
   });
 };
