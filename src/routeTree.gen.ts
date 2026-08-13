@@ -21,6 +21,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
+import { Route as AuthenticatedExamSessionsIndexRouteImport } from './routes/_authenticated/exam-sessions.index'
 import { Route as ApiStreamCameraIdRouteImport } from './routes/api/stream.$cameraId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -82,6 +83,12 @@ const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedExamSessionsIndexRoute =
+  AuthenticatedExamSessionsIndexRouteImport.update({
+    id: '/exam-sessions/',
+    path: '/exam-sessions/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiStreamCameraIdRoute = ApiStreamCameraIdRouteImport.update({
   id: '/api/stream/$cameraId',
   path: '/api/stream/$cameraId',
@@ -101,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
+  '/exam-sessions/': typeof AuthenticatedExamSessionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -115,6 +123,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
+  '/exam-sessions': typeof AuthenticatedExamSessionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -131,6 +140,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
+  '/_authenticated/exam-sessions/': typeof AuthenticatedExamSessionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/users'
     | '/api/stream/$cameraId'
+    | '/exam-sessions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/users'
     | '/api/stream/$cameraId'
+    | '/exam-sessions'
   id:
     | '__root__'
     | '/'
@@ -176,6 +188,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/users'
     | '/api/stream/$cameraId'
+    | '/_authenticated/exam-sessions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -271,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsersRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/exam-sessions/': {
+      id: '/_authenticated/exam-sessions/'
+      path: '/exam-sessions'
+      fullPath: '/exam-sessions/'
+      preLoaderRoute: typeof AuthenticatedExamSessionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/stream/$cameraId': {
       id: '/api/stream/$cameraId'
       path: '/api/stream/$cameraId'
@@ -291,6 +311,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
+  AuthenticatedExamSessionsIndexRoute: typeof AuthenticatedExamSessionsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -303,6 +324,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
+  AuthenticatedExamSessionsIndexRoute: AuthenticatedExamSessionsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
