@@ -304,6 +304,154 @@ export type Database = {
           },
         ]
       }
+      exam_invigilators: {
+        Row: {
+          created_at: string
+          exam_session_id: string
+          full_name: string
+          id: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          exam_session_id: string
+          full_name: string
+          id?: string
+          role?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          exam_session_id?: string
+          full_name?: string
+          id?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exam_invigilators_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exam_roster_students: {
+        Row: {
+          created_at: string
+          exam_session_id: string
+          full_name: string
+          id: string
+          university_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          exam_session_id: string
+          full_name: string
+          id?: string
+          university_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          exam_session_id?: string
+          full_name?: string
+          id?: string
+          university_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exam_roster_students_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exam_session_cameras: {
+        Row: {
+          camera_id: string
+          created_at: string
+          exam_session_id: string
+          is_primary: boolean
+        }
+        Insert: {
+          camera_id: string
+          created_at?: string
+          exam_session_id: string
+          is_primary?: boolean
+        }
+        Update: {
+          camera_id?: string
+          created_at?: string
+          exam_session_id?: string
+          is_primary?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exam_session_cameras_camera_id_fkey"
+            columns: ["camera_id"]
+            isOneToOne: false
+            referencedRelation: "cameras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exam_session_cameras_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exam_sessions: {
+        Row: {
+          course_code: string
+          created_at: string
+          created_by: string | null
+          ended_at: string | null
+          id: string
+          location_label: string
+          scheduled_at: string | null
+          started_at: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          course_code?: string
+          created_at?: string
+          created_by?: string | null
+          ended_at?: string | null
+          id?: string
+          location_label?: string
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          course_code?: string
+          created_at?: string
+          created_by?: string | null
+          ended_at?: string | null
+          id?: string
+          location_label?: string
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

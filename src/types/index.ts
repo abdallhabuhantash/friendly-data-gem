@@ -278,3 +278,64 @@ export interface AuthSession {
   user: AppUser;
   issuedAt: string;
 }
+
+/**
+ * Exam session lifecycle. `active` is only ever set by the future Start Exam
+ * Session runtime action; this foundation never claims monitoring has begun.
+ */
+export type ExamSessionStatus = "draft" | "ready" | "active" | "ended" | "archived";
+
+export interface ExamSession {
+  id: string;
+  title: string;
+  /** Optional free text, e.g. "CS201". */
+  courseCode: string;
+  /** Optional free text hall label. No seat/hall registration exists. */
+  locationLabel: string;
+  scheduledAt: string | null;
+  status: ExamSessionStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Linked existing cameras. Credentials are never included. */
+  cameraIds: string[];
+  primaryCameraId: string | null;
+  /** Session metadata only — no visual staff recognition exists. */
+  invigilators: ExamInvigilator[];
+  rosterCount: number;
+}
+
+export interface ExamSessionInput {
+  title: string;
+  courseCode: string;
+  locationLabel: string;
+  scheduledAt: string | null;
+  primaryCameraId: string | null;
+  invigilatorNames: string[];
+}
+
+export interface ExamInvigilator {
+  id: string;
+  fullName: string;
+  role: string;
+}
+
+/**
+ * A real student record scoped to one exam session. Students are never
+ * application users and never carry an AI tracking or subject identity.
+ */
+export interface RosterStudent {
+  id: string;
+  examSessionId: string;
+  universityId: string;
+  fullName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RosterStudentInput {
+  universityId: string;
+  fullName: string;
+}
