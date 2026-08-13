@@ -22,7 +22,7 @@ Pure logic: no clocks (the caller supplies ``observed_at``), no I/O, no models.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from ..domain.geometry import BBox
 from ..domain.observations import PersonObservation
@@ -53,10 +53,14 @@ class ExamSubjectRegistry:
         exam_session_id: str,
         camera_id: str,
         config: SubjectRegistryConfig,
+        number_allocator: Optional[Callable[[], int]] = None,
     ) -> None:
         self.exam_session_id = exam_session_id
         self.camera_id = camera_id
         self.config = config
+        # Subject numbers must be unique per EXAM SESSION, not per camera, so a
+        # multi-camera session injects one shared allocator.
+        self._allocator = number_allocator
         self._subjects: dict[int, SubjectState] = {}
         self._pending: dict[str, PendingTrack] = {}
         self._next_number = 1
@@ -341,8 +345,8 @@ class ExamSubjectRegistry:
         observed_at: datetime,
         first_seen_at: datetime,
     ) -> list[SubjectEvent]:
-        number = self._next_number
-        self._next_number += 1
+        number = self._allocator() if self._allocator is not None else self._next_number
+        self._next_number = max(self._next_number, number + 1)
         state = SubjectState(
             subject_number=number,
             first_seen_at=first_seen_at,
