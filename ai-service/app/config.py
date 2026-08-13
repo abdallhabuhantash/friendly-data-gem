@@ -270,6 +270,58 @@ class Settings(BaseSettings):
         return (1.0 / fps) if fps > 0 else None
 
 
+    # --- Anonymous subject registry truthfulness --------------------------
+    @property
+    def subject_registry_problems(self) -> list[str]:
+        """Subject-registry configuration problems; empty means usable."""
+        if not self.subjects_enabled:
+            return []
+        required = {
+            "SUBJECT_MIN_FRAMES_TO_QUALIFY": self.subject_min_frames_to_qualify,
+            "SUBJECT_MIN_SECONDS_TO_QUALIFY": self.subject_min_seconds_to_qualify,
+            "SUBJECT_SHORT_GAP_SECONDS": self.subject_short_gap_seconds,
+            "SUBJECT_LOST_AFTER_SECONDS": self.subject_lost_after_seconds,
+            "SUBJECT_END_AFTER_SECONDS": self.subject_end_after_seconds,
+            "SUBJECT_REASSOCIATION_MIN_CONFIDENCE": self.subject_reassociation_min_confidence,
+            "SUBJECT_REASSOCIATION_MARGIN": self.subject_reassociation_margin,
+            "SUBJECT_ANCHOR_SMOOTHING": self.subject_anchor_smoothing,
+            "SUBJECT_PENDING_GAP_SECONDS": self.subject_pending_gap_seconds,
+        }
+        missing = sorted(name for name, value in required.items() if value is None)
+        if missing:
+            return [
+                "SUBJECTS_ENABLED=true but required settings are not set: "
+                + ", ".join(missing)
+                + " (no default is assumed; anonymous subject tracking stays unconfigured)"
+            ]
+        try:
+            self.subject_registry_config()
+        except ValueError as exc:
+            return [f"subject registry configuration is invalid: {exc}"]
+        return []
+
+    def subject_registry_config(self):  # noqa: ANN201 - avoids a domain import cycle
+        """Builds the explicit registry policy, or raises/returns None."""
+        from .domain.session_subjects import SubjectRegistryConfig
+
+        if not self.subjects_enabled:
+            return None
+        return SubjectRegistryConfig(
+            min_frames_to_qualify=int(self.subject_min_frames_to_qualify),  # type: ignore[arg-type]
+            min_seconds_to_qualify=float(self.subject_min_seconds_to_qualify),  # type: ignore[arg-type]
+            short_gap_seconds=float(self.subject_short_gap_seconds),  # type: ignore[arg-type]
+            lost_after_seconds=float(self.subject_lost_after_seconds),  # type: ignore[arg-type]
+            end_after_seconds=float(self.subject_end_after_seconds),  # type: ignore[arg-type]
+            reassociation_min_confidence=float(self.subject_reassociation_min_confidence),  # type: ignore[arg-type]
+            reassociation_margin=float(self.subject_reassociation_margin),  # type: ignore[arg-type]
+            anchor_smoothing=float(self.subject_anchor_smoothing),  # type: ignore[arg-type]
+            pending_gap_seconds=float(self.subject_pending_gap_seconds),  # type: ignore[arg-type]
+        )
+
+    @property
+    def subject_registry_configured(self) -> bool:
+        return self.subjects_enabled and not self.subject_registry_problems
+
     def validate_runtime(self) -> list[str]:
         """Returns human-readable configuration problems (never secret values)."""
         problems: list[str] = []
@@ -282,6 +334,8 @@ class Settings(BaseSettings):
         # Pose is optional: its problems are reported, never fatal.
         problems.extend(self.pose_inference_problems)
         problems.extend(self.pose_association_problems)
+        # Anonymous subject tracking is optional too.
+        problems.extend(self.subject_registry_problems)
         return problems
 
 
