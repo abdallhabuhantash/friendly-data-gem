@@ -10,7 +10,11 @@ import { ExamSessionFormDialog } from "@/components/exams/ExamSessionFormDialog"
 import { RosterPanel } from "@/components/exams/RosterPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { useCameras } from "@/hooks/use-monitoring";
-import { useExamSession, useSetExamConfiguredStatus, useUpdateExamSession } from "@/hooks/use-exams";
+import {
+  useExamSession,
+  useSetExamConfiguredStatus,
+  useUpdateExamSession,
+} from "@/hooks/use-exams";
 import { EXAM_STATUS_LABELS } from "@/lib/exam-validation";
 import type { ExamSession, ExamSessionInput } from "@/types";
 
@@ -175,7 +179,9 @@ function Overview({
       />
       <Fact
         label="Scheduled start"
-        value={session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : "Not scheduled"}
+        value={
+          session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : "Not scheduled"
+        }
       />
       <Fact
         label="Primary camera"

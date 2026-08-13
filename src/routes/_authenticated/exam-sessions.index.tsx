@@ -115,13 +115,7 @@ function cameraLabel(session: ExamSession, cameras: { id: string; name: string }
   return cameras?.find((camera) => camera.id === session.primaryCameraId)?.name ?? "Linked camera";
 }
 
-function SessionRow({
-  session,
-  cameraName,
-}: {
-  session: ExamSession;
-  cameraName: string | null;
-}) {
+function SessionRow({ session, cameraName }: { session: ExamSession; cameraName: string | null }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">

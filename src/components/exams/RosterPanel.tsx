@@ -23,9 +23,10 @@ interface Props {
 export function RosterPanel({ examSessionId, canEdit }: Props) {
   const roster = useRoster(examSessionId);
   const [search, setSearch] = useState("");
-  const [studentDialog, setStudentDialog] = useState<{ open: boolean; student: RosterStudent | null }>(
-    { open: false, student: null },
-  );
+  const [studentDialog, setStudentDialog] = useState<{
+    open: boolean;
+    student: RosterStudent | null;
+  }>({ open: false, student: null });
   const [importOpen, setImportOpen] = useState(false);
 
   const add = useAddRosterStudent(examSessionId);

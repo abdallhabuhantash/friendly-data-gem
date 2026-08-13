@@ -24,10 +24,7 @@ export interface ColumnMapping {
 }
 
 export type RosterRowIssue =
-  | "missing_university_id"
-  | "missing_full_name"
-  | "duplicate_in_file"
-  | "already_in_session";
+  "missing_university_id" | "missing_full_name" | "duplicate_in_file" | "already_in_session";
 
 export interface RosterRowResult {
   /** 1-based data row number as the user sees it in the preview. */
@@ -119,9 +116,7 @@ export function detectColumnMapping(headers: string[]): ColumnMapping {
       if (exact >= 0) return exact;
     }
     for (const candidate of candidates) {
-      const partial = normalized.findIndex(
-        (header) => header !== "" && header.includes(candidate),
-      );
+      const partial = normalized.findIndex((header) => header !== "" && header.includes(candidate));
       if (partial >= 0) return partial;
     }
     return null;

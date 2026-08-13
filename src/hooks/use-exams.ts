@@ -23,7 +23,8 @@ const useInvalidate = () => {
   const queryClient = useQueryClient();
   return (examSessionId?: string) => {
     void queryClient.invalidateQueries({ queryKey: ["exam-sessions"] });
-    if (examSessionId) void queryClient.invalidateQueries({ queryKey: ["exam-roster", examSessionId] });
+    if (examSessionId)
+      void queryClient.invalidateQueries({ queryKey: ["exam-roster", examSessionId] });
   };
 };
 

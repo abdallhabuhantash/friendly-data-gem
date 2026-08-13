@@ -38,7 +38,12 @@ describe("parseSheetBuffer", () => {
   it("reads a CSV roster and drops blank rows", () => {
     const parsed = parseSheetBuffer(
       sheetBuffer(
-        [["Student ID", "Name"], ["1", "A"], ["", ""], ["2", "B"]],
+        [
+          ["Student ID", "Name"],
+          ["1", "A"],
+          ["", ""],
+          ["2", "B"],
+        ],
         "csv",
       ),
     );
@@ -86,7 +91,13 @@ describe("buildRosterImportPlan", () => {
 
   it("accepts clean rows", () => {
     const plan = buildRosterImportPlan(
-      table(["id", "name"], [["1", "A"], ["2", "B"]]),
+      table(
+        ["id", "name"],
+        [
+          ["1", "A"],
+          ["2", "B"],
+        ],
+      ),
       mapping,
       [],
     );
@@ -99,7 +110,14 @@ describe("buildRosterImportPlan", () => {
 
   it("rejects malformed rows with missing id or name", () => {
     const plan = buildRosterImportPlan(
-      table(["id", "name"], [["", "A"], ["2", ""], ["3", "C"]]),
+      table(
+        ["id", "name"],
+        [
+          ["", "A"],
+          ["2", ""],
+          ["3", "C"],
+        ],
+      ),
       mapping,
       [],
     );
@@ -116,7 +134,13 @@ describe("buildRosterImportPlan", () => {
 
   it("flags duplicate ids inside the file and keeps the first occurrence", () => {
     const plan = buildRosterImportPlan(
-      table(["id", "name"], [["1", "A"], ["1", "Duplicate"]]),
+      table(
+        ["id", "name"],
+        [
+          ["1", "A"],
+          ["1", "Duplicate"],
+        ],
+      ),
       mapping,
       [],
     );
@@ -126,7 +150,13 @@ describe("buildRosterImportPlan", () => {
 
   it("flags ids already present in the exam session", () => {
     const plan = buildRosterImportPlan(
-      table(["id", "name"], [["1", "A"], ["2", "B"]]),
+      table(
+        ["id", "name"],
+        [
+          ["1", "A"],
+          ["2", "B"],
+        ],
+      ),
       mapping,
       ["1"],
     );
