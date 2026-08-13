@@ -341,19 +341,21 @@ export interface RosterStudentInput {
 }
 
 /**
- * Truthful tracking state of one anonymous subject, as reported by the AI
- * service. `uncertain` and `conflict` are preserved deliberately: the system
- * never upgrades ambiguous tracking evidence into a confident claim.
+ * Existence of an anonymous exam subject, independent of any raw tracker
+ * binding. A subject keeps existing — and keeps its number reserved — while it
+ * is lost.
  */
-export type SubjectTrackingStatus =
-  "stable" | "temporarily_lost" | "uncertain" | "conflict" | "ended";
+export type SubjectLifecycle = "active" | "temporarily_lost" | "lost" | "ended";
+
+/** State of the subject's current binding to a raw tracker id. */
+export type SubjectTrackAssociation = "confirmed" | "provisional" | "unresolved" | "conflict";
 
 /**
  * An anonymous exam-session subject (S001, S002, …).
  *
- * This is NOT an identity: it carries no name, no university ID, no face, no
- * biometric signature and no seat. Resolution to a roster student is manual,
- * optional and on demand.
+ * The label belongs to one logical physical person for the whole session: it is
+ * never renumbered, never transferred and never reused. It is NOT an identity —
+ * no name, no university ID, no face, no biometric signature, no seat.
  */
 export interface SessionSubject {
   id: string;
@@ -362,12 +364,13 @@ export interface SessionSubject {
   /** Deterministic per-session label, e.g. "S017". */
   label: string;
   cameraId: string | null;
-  trackingStatus: SubjectTrackingStatus;
+  lifecycle: SubjectLifecycle;
+  association: SubjectTrackAssociation;
   firstSeenAt: string;
   lastSeenAt: string;
   endedAt: string | null;
   /** How often a lost raw track had to be recovered for this subject. */
-  reassociationCount: number;
+  recoveryCount: number;
   /** Confidence of the most recent recovery, or null when never recovered. */
   lastAssociationConfidence: number | null;
 }

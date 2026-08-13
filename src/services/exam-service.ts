@@ -13,7 +13,8 @@ import type {
   RosterStudent,
   RosterStudentInput,
   SessionSubject,
-  SubjectTrackingStatus,
+  SubjectLifecycle,
+  SubjectTrackAssociation,
 } from "@/types";
 
 type SessionRow = Tables<"exam_sessions">;
@@ -318,11 +319,12 @@ export const sessionSubjectsService = {
       subjectNumber: row.subject_number,
       label: row.subject_label,
       cameraId: row.camera_id,
-      trackingStatus: (row.tracking_status ?? "stable") as SubjectTrackingStatus,
+      lifecycle: (row.lifecycle_status ?? "active") as SubjectLifecycle,
+      association: (row.track_association ?? "unresolved") as SubjectTrackAssociation,
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
       endedAt: row.ended_at,
-      reassociationCount: row.reassociation_count ?? 0,
+      recoveryCount: row.reassociation_count ?? 0,
       lastAssociationConfidence:
         row.last_association_confidence === null ? null : Number(row.last_association_confidence),
     }));

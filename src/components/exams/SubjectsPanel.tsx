@@ -1,21 +1,38 @@
 import { Panel } from "@/components/common/Panel";
 import { useSessionSubjects } from "@/hooks/use-exams";
-import type { ExamSession, SessionSubject, SubjectTrackingStatus } from "@/types";
+import type {
+  ExamSession,
+  SessionSubject,
+  SubjectLifecycle,
+  SubjectTrackAssociation,
+} from "@/types";
 
-const STATUS_LABEL: Record<SubjectTrackingStatus, string> = {
-  stable: "Tracked",
+const LIFECYCLE_LABEL: Record<SubjectLifecycle, string> = {
+  active: "Active",
   temporarily_lost: "Temporarily lost",
-  uncertain: "Uncertain",
-  conflict: "Conflicting evidence",
+  lost: "Lost",
   ended: "Ended",
 };
 
-const STATUS_TONE: Record<SubjectTrackingStatus, string> = {
-  stable: "border-success/40 text-success",
+const LIFECYCLE_TONE: Record<SubjectLifecycle, string> = {
+  active: "border-success/40 text-success",
   temporarily_lost: "border-warning/40 text-warning",
-  uncertain: "border-warning/40 text-warning",
-  conflict: "border-destructive/40 text-destructive",
+  lost: "border-warning/40 text-warning",
   ended: "border-border text-muted-foreground",
+};
+
+const ASSOCIATION_LABEL: Record<SubjectTrackAssociation, string> = {
+  confirmed: "Confirmed",
+  provisional: "Provisional",
+  unresolved: "Unresolved",
+  conflict: "Conflicting evidence",
+};
+
+const ASSOCIATION_TONE: Record<SubjectTrackAssociation, string> = {
+  confirmed: "border-success/40 text-success",
+  provisional: "border-warning/40 text-warning",
+  unresolved: "border-border text-muted-foreground",
+  conflict: "border-destructive/40 text-destructive",
 };
 
 /**
@@ -59,7 +76,8 @@ export function SubjectsPanel({ session }: { session: ExamSession }) {
             <thead>
               <tr className="border-b border-border/70 text-left">
                 <th className="label-tech py-1.5 pr-3">Subject</th>
-                <th className="label-tech py-1.5 pr-3">Tracking</th>
+                <th className="label-tech py-1.5 pr-3">Subject state</th>
+                <th className="label-tech py-1.5 pr-3">Track association</th>
                 <th className="label-tech py-1.5 pr-3">First seen</th>
                 <th className="label-tech py-1.5 pr-3">Last seen</th>
                 <th className="label-tech py-1.5 pr-3">Track recoveries</th>
@@ -76,8 +94,9 @@ export function SubjectsPanel({ session }: { session: ExamSession }) {
       )}
 
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Identity stays UNRESOLVED unless a reviewer resolves it manually. Ambiguous tracking is
-        reported as “Uncertain” instead of being guessed.
+        A subject label belongs to one person for the whole session: it is never renumbered, never
+        transferred and never reused. A lost subject keeps its label reserved. Ambiguous tracking is
+        reported as “Unresolved” or “Conflicting evidence” instead of being guessed.
       </p>
     </Panel>
   );
@@ -89,9 +108,16 @@ function SubjectRow({ subject }: { subject: SessionSubject }) {
       <td className="py-1.5 pr-3 font-mono text-[12px] text-foreground">{subject.label}</td>
       <td className="py-1.5 pr-3">
         <span
-          className={`inline-flex rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase ${STATUS_TONE[subject.trackingStatus]}`}
+          className={`inline-flex rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase ${LIFECYCLE_TONE[subject.lifecycle]}`}
         >
-          {STATUS_LABEL[subject.trackingStatus]}
+          {LIFECYCLE_LABEL[subject.lifecycle]}
+        </span>
+      </td>
+      <td className="py-1.5 pr-3">
+        <span
+          className={`inline-flex rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase ${ASSOCIATION_TONE[subject.association]}`}
+        >
+          {ASSOCIATION_LABEL[subject.association]}
         </span>
       </td>
       <td className="py-1.5 pr-3 text-muted-foreground">
@@ -100,7 +126,7 @@ function SubjectRow({ subject }: { subject: SessionSubject }) {
       <td className="py-1.5 pr-3 text-muted-foreground">
         {new Date(subject.lastSeenAt).toLocaleTimeString()}
       </td>
-      <td className="py-1.5 pr-3 text-muted-foreground">{subject.reassociationCount}</td>
+      <td className="py-1.5 pr-3 text-muted-foreground">{subject.recoveryCount}</td>
       <td className="py-1.5 text-muted-foreground">
         {subject.lastAssociationConfidence === null
           ? "—"

@@ -107,22 +107,26 @@ class Settings(BaseSettings):
     subject_min_seconds_to_qualify: Optional[float] = None
     subject_short_gap_seconds: Optional[float] = None
     subject_lost_after_seconds: Optional[float] = None
-    subject_end_after_seconds: Optional[float] = None
     subject_reassociation_min_confidence: Optional[float] = None
     subject_reassociation_margin: Optional[float] = None
-    subject_anchor_smoothing: Optional[float] = None
+    subject_plausible_candidate_score: Optional[float] = None
+    subject_motion_smoothing: Optional[float] = None
     subject_pending_gap_seconds: Optional[float] = None
+    subject_max_speed_per_second: Optional[float] = None
+    subject_trajectory_length: Optional[int] = None
 
     @field_validator(
         "subject_min_frames_to_qualify",
         "subject_min_seconds_to_qualify",
         "subject_short_gap_seconds",
         "subject_lost_after_seconds",
-        "subject_end_after_seconds",
         "subject_reassociation_min_confidence",
         "subject_reassociation_margin",
-        "subject_anchor_smoothing",
+        "subject_plausible_candidate_score",
+        "subject_motion_smoothing",
         "subject_pending_gap_seconds",
+        "subject_max_speed_per_second",
+        "subject_trajectory_length",
         mode="before",
     )
     @classmethod
@@ -281,11 +285,13 @@ class Settings(BaseSettings):
             "SUBJECT_MIN_SECONDS_TO_QUALIFY": self.subject_min_seconds_to_qualify,
             "SUBJECT_SHORT_GAP_SECONDS": self.subject_short_gap_seconds,
             "SUBJECT_LOST_AFTER_SECONDS": self.subject_lost_after_seconds,
-            "SUBJECT_END_AFTER_SECONDS": self.subject_end_after_seconds,
             "SUBJECT_REASSOCIATION_MIN_CONFIDENCE": self.subject_reassociation_min_confidence,
             "SUBJECT_REASSOCIATION_MARGIN": self.subject_reassociation_margin,
-            "SUBJECT_ANCHOR_SMOOTHING": self.subject_anchor_smoothing,
+            "SUBJECT_PLAUSIBLE_CANDIDATE_SCORE": self.subject_plausible_candidate_score,
+            "SUBJECT_MOTION_SMOOTHING": self.subject_motion_smoothing,
             "SUBJECT_PENDING_GAP_SECONDS": self.subject_pending_gap_seconds,
+            "SUBJECT_MAX_SPEED_PER_SECOND": self.subject_max_speed_per_second,
+            "SUBJECT_TRAJECTORY_LENGTH": self.subject_trajectory_length,
         }
         missing = sorted(name for name, value in required.items() if value is None)
         if missing:
@@ -311,11 +317,13 @@ class Settings(BaseSettings):
             min_seconds_to_qualify=float(self.subject_min_seconds_to_qualify),  # type: ignore[arg-type]
             short_gap_seconds=float(self.subject_short_gap_seconds),  # type: ignore[arg-type]
             lost_after_seconds=float(self.subject_lost_after_seconds),  # type: ignore[arg-type]
-            end_after_seconds=float(self.subject_end_after_seconds),  # type: ignore[arg-type]
-            reassociation_min_confidence=float(self.subject_reassociation_min_confidence),  # type: ignore[arg-type]
-            reassociation_margin=float(self.subject_reassociation_margin),  # type: ignore[arg-type]
-            anchor_smoothing=float(self.subject_anchor_smoothing),  # type: ignore[arg-type]
+            recovery_min_confidence=float(self.subject_reassociation_min_confidence),  # type: ignore[arg-type]
+            recovery_margin=float(self.subject_reassociation_margin),  # type: ignore[arg-type]
+            plausible_candidate_score=float(self.subject_plausible_candidate_score),  # type: ignore[arg-type]
+            motion_smoothing=float(self.subject_motion_smoothing),  # type: ignore[arg-type]
             pending_gap_seconds=float(self.subject_pending_gap_seconds),  # type: ignore[arg-type]
+            max_speed_per_second=float(self.subject_max_speed_per_second),  # type: ignore[arg-type]
+            trajectory_length=int(self.subject_trajectory_length),  # type: ignore[arg-type]
         )
 
     @property
