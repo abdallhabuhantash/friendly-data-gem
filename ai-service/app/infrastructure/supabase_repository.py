@@ -38,6 +38,15 @@ def _int(value: Any, default: int) -> int:
         return default
 
 
+def _iso(value: Any) -> Optional[str]:
+    """UTC ISO-8601 for a datetime, or None. Never invents a timestamp."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    return str(value)
+
+
 class SupabaseRepository:
     """Typed access to the tables the AI service owns or observes."""
 
@@ -199,3 +208,135 @@ class SupabaseRepository:
         self._client.table("events").update({"snapshot_path": snapshot_path}).eq(
             "id", event_id
         ).execute()
+    # --- exam sessions (anonymous subject runtime) -------------------------
+    def exam_session(self, exam_session_id: str) -> Optional[dict[str, Any]]:
+        """Session row plus its linked camera ids. No roster data is read."""
+        response = (
+            self._client.table("exam_sessions")
+            .select("id,title,status,started_at,ended_at")
+            .eq("id", exam_session_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            return None
+        row = dict(rows[0])
+        row["camera_ids"] = self._exam_session_camera_ids(exam_session_id)
+        return row
+
+    def armed_exam_sessions(self) -> list[dict[str, Any]]:
+        """Every session the console has armed (status `active`)."""
+        response = (
+            self._client.table("exam_sessions")
+            .select("id,started_at")
+            .eq("status", "active")
+            .execute()
+        )
+        sessions: list[dict[str, Any]] = []
+        for row in response.data or []:
+            sessions.append(
+                {
+                    "id": row.get("id"),
+                    "started_at": row.get("started_at"),
+                    "camera_ids": self._exam_session_camera_ids(str(row.get("id"))),
+                }
+            )
+        return sessions
+
+    def _exam_session_camera_ids(self, exam_session_id: str) -> list[str]:
+        response = (
+            self._client.table("exam_session_cameras")
+            .select("camera_id")
+            .eq("exam_session_id", exam_session_id)
+            .execute()
+        )
+        return [str(row["camera_id"]) for row in (response.data or []) if row.get("camera_id")]
+
+    def set_exam_session_runtime(
+        self,
+        exam_session_id: str,
+        *,
+        status: str,
+        started_at: Optional[datetime] = None,
+        ended_at: Optional[datetime] = None,
+    ) -> None:
+        payload: dict[str, Any] = {"status": status}
+        if started_at is not None:
+            payload["started_at"] = started_at.astimezone(timezone.utc).isoformat()
+        if ended_at is not None:
+            payload["ended_at"] = ended_at.astimezone(timezone.utc).isoformat()
+        self._client.table("exam_sessions").update(payload).eq("id", exam_session_id).execute()
+
+    # --- anonymous subject state -----------------------------------------
+    def existing_subject_rows(self, exam_session_id: str) -> dict[int, str]:
+        response = (
+            self._client.table("session_subjects")
+            .select("id,subject_number")
+            .eq("exam_session_id", exam_session_id)
+            .execute()
+        )
+        return {
+            int(row["subject_number"]): str(row["id"])
+            for row in (response.data or [])
+            if row.get("subject_number") is not None
+        }
+
+    def upsert_session_subject(self, payload: dict[str, Any]) -> Optional[str]:
+        """Anonymous subject state only: number, status, times, region."""
+        anchor = payload.get("anchor")
+        row: dict[str, Any] = {
+            "exam_session_id": payload["exam_session_id"],
+            "subject_number": int(payload["subject_number"]),
+            "camera_id": payload.get("camera_id"),
+            "tracking_status": payload["tracking_status"],
+            "first_seen_at": _iso(payload.get("first_seen_at")),
+            "last_seen_at": _iso(payload.get("last_seen_at")),
+            "ended_at": _iso(payload.get("ended_at")),
+            "anchor_x": None if anchor is None else round(float(anchor.x), 6),
+            "anchor_y": None if anchor is None else round(float(anchor.y), 6),
+            "anchor_width": None if anchor is None else round(float(anchor.width), 6),
+            "anchor_height": None if anchor is None else round(float(anchor.height), 6),
+            "anchor_updated_at": _iso(payload.get("anchor_updated_at")),
+            "reassociation_count": int(payload.get("reassociation_count") or 0),
+            "last_association_confidence": payload.get("last_association_confidence"),
+        }
+        response = (
+            self._client.table("session_subjects")
+            .upsert(row, on_conflict="exam_session_id,subject_number")
+            .execute()
+        )
+        rows = response.data or []
+        if rows and rows[0].get("id"):
+            return str(rows[0]["id"])
+        existing = self.existing_subject_rows(str(payload["exam_session_id"]))
+        return existing.get(int(payload["subject_number"]))
+
+    def open_subject_track(
+        self,
+        *,
+        session_subject_id: str,
+        exam_session_id: str,
+        raw_tracking_id: str,
+        started_at: datetime,
+        association_method: str,
+        association_confidence: Optional[float],
+    ) -> None:
+        """Records one raw-track segment. Raw ids are temporary labels only."""
+        self._client.table("session_subject_tracks").insert(
+            {
+                "session_subject_id": session_subject_id,
+                "exam_session_id": exam_session_id,
+                "raw_tracking_id": raw_tracking_id,
+                "started_at": _iso(started_at),
+                "association_method": association_method,
+                "association_confidence": association_confidence,
+            }
+        ).execute()
+
+    def close_subject_track(
+        self, *, exam_session_id: str, raw_tracking_id: str, ended_at: datetime
+    ) -> None:
+        self._client.table("session_subject_tracks").update({"ended_at": _iso(ended_at)}).eq(
+            "exam_session_id", exam_session_id
+        ).eq("raw_tracking_id", raw_tracking_id).is_("ended_at", "null").execute()

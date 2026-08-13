@@ -30,6 +30,7 @@ from ..domain.models import (
 from ..domain.observations import FrameObservations
 
 
+from ..events.subject_state_publisher import SubjectStatePublisher
 from ..events.snapshot_service import SnapshotService, annotate_frame, encode_jpeg
 from ..events.event_publisher import EventPublisher
 from ..infrastructure.credential_provider import (
@@ -44,6 +45,7 @@ from ..notifications.telegram import TelegramProvider
 from .frame_gate import FrameGate
 from .health_reporter import HealthReporter, measure_gpu_load
 from .pose_runtime import PoseRuntime
+from .subject_runtime import ArmedSession, SubjectRuntime
 from .stream_hub import StreamHub
 
 
@@ -120,6 +122,11 @@ class Orchestrator:
         # Optional, asynchronous, OFF unless explicitly configured.
         self.pose: Optional[PoseRuntime] = None
         self._pose_problems: list[str] = []
+        # Anonymous exam-session subjects: OFF unless explicitly configured, and
+        # then still inert until an exam session is ARMED by an operator.
+        self.subject_publisher = SubjectStatePublisher(self.repository)
+        self.subjects: Optional[SubjectRuntime] = None
+        self._subject_problems: list[str] = []
 
         self.system = SystemConfig()
         self._rules: list[RuleConfig] = []
@@ -151,10 +158,36 @@ class Orchestrator:
         # Pose is optional: a pose configuration problem must never prevent
         # Task 1 from starting, and never raise out of start().
         self._start_pose_runtime()
+        self._start_subject_runtime()
         self._refresh_configuration()
         self._control = threading.Thread(target=self._control_loop, name="control", daemon=True)
         self._control.start()
         logger.info("AI service started in %s mode", self.system.operation_mode)
+
+    def _start_subject_runtime(self) -> None:
+        """Constructs the subject registry ONLY when explicitly configured.
+
+        A configuration problem is reported, never repaired with an invented
+        default, and never prevents Task 1 detection from running.
+        """
+        self._subject_problems = list(self.settings.subject_registry_problems)
+        if not self.settings.subject_registry_configured:
+            self.subjects = None
+            if self._subject_problems:
+                for problem in self._subject_problems:
+                    logger.warning("Subjects: %s", problem)
+            return
+        try:
+            config = self.settings.subject_registry_config()
+            if config is None:
+                self.subjects = None
+                return
+            self.subjects = SubjectRuntime(config, self.subject_publisher)
+        except Exception as exc:
+            self.subjects = None
+            self._subject_problems.append(
+                f"anonymous subject tracking could not start: {type(exc).__name__}"
+            )
 
     def _start_pose_runtime(self) -> None:
         """Constructs the pose runtime ONLY when explicitly enabled + valid."""
@@ -313,6 +346,11 @@ class Orchestrator:
         self._frame_gate.reset(camera_id)
         if self.detector:
             self.detector.reset_camera(camera_id)
+        subjects = getattr(self, "subjects", None)
+        if subjects:
+            # A replaced stream is a new incarnation: anonymous subjects of the
+            # previous incarnation are closed rather than silently continued.
+            subjects.reset_camera(camera_id)
         pose = getattr(self, "pose", None)
         if pose:
             # Pending job, latest result, cadence timestamps and incarnation
@@ -516,6 +554,17 @@ class Orchestrator:
             source_mode=self.system.operation_mode,
         )
 
+        # Anonymous subject identity is derived from the SAME observation view and
+        # is completely independent of rule configuration: it never creates
+        # events and never influences Task 1 thresholds.
+        if self.subjects is not None:
+            try:
+                self.subjects.observe(observations)
+            except Exception as exc:
+                logger.warning(
+                    "Anonymous subject tracking failed for one frame: %s", type(exc).__name__
+                )
+
         if not applicable_rules:
             return observations
 
@@ -589,6 +638,9 @@ class Orchestrator:
                 self._camera_heartbeats()
                 last_cameras = now
 
+            if self.subjects is not None:
+                self._sync_armed_sessions()
+                self.subject_publisher.flush()
             self.publisher.retry_pending()
             self.publisher.retry_pending_evidence()
             self.notifications.drain()
@@ -610,6 +662,108 @@ class Orchestrator:
                 self.health.camera_beat(
                     camera_id, status="offline", fps=0.0, heartbeat_at=stats.last_frame_at
                 )
+
+    # --- exam session arming ---------------------------------------------
+    def _sync_armed_sessions(self) -> None:
+        """Mirrors the console: `active` sessions are armed, others are not."""
+        if self.subjects is None:
+            return
+        try:
+            rows = self.repository.armed_exam_sessions()
+        except Exception as exc:
+            logger.warning("Armed exam session refresh failed: %s", type(exc).__name__)
+            return
+        self.subjects.sync(
+            ArmedSession(
+                exam_session_id=str(row["id"]),
+                camera_ids=tuple(row.get("camera_ids") or ()),
+            )
+            for row in rows
+            if row.get("id")
+        )
+
+    def arm_exam_session(self, exam_session_id: str) -> dict:
+        """Arms monitoring for one configured exam session, from a clean state.
+
+        Paper distribution happens BEFORE arming: nothing is monitored until an
+        operator performs this action (identity contract §11).
+        """
+        if self.subjects is None:
+            raise RuntimeError(
+                "anonymous subject tracking is not configured on this AI service"
+            )
+        session = self.repository.exam_session(exam_session_id)
+        if session is None:
+            raise LookupError("exam session not found")
+        status = str(session.get("status") or "")
+        if status not in ("ready", "active"):
+            raise ValueError(f"exam session is '{status}', not configured (ready)")
+        camera_ids = tuple(session.get("camera_ids") or ())
+        if not camera_ids:
+            raise ValueError("exam session has no camera assigned")
+        active = set(self.cameras.active)
+        running = tuple(camera_id for camera_id in camera_ids if camera_id in active)
+        if not running:
+            raise ValueError("no assigned camera is currently being processed")
+        started_at = datetime.now(timezone.utc)
+        # Adopt any subject rows that already exist so a restart never
+        # duplicates or renumbers anonymous subjects.
+        try:
+            self.subject_publisher.bind_existing(
+                exam_session_id, self.repository.existing_subject_rows(exam_session_id)
+            )
+        except Exception as exc:
+            logger.warning("Existing subject rows could not be read: %s", type(exc).__name__)
+        self.subjects.arm(
+            ArmedSession(
+                exam_session_id=exam_session_id,
+                camera_ids=running,
+                started_at=started_at,
+            )
+        )
+        if status != "active":
+            self.repository.set_exam_session_runtime(
+                exam_session_id, status="active", started_at=started_at
+            )
+        return {
+            "armed": True,
+            "exam_session_id": exam_session_id,
+            "cameras": list(running),
+            "started_at": started_at.isoformat(),
+        }
+
+    def end_exam_session(self, exam_session_id: str) -> dict:
+        """Disarms monitoring and closes every anonymous subject truthfully."""
+        ended_at = datetime.now(timezone.utc)
+        if self.subjects is not None:
+            self.subjects.disarm(exam_session_id, ended_at=ended_at)
+            self.subject_publisher.flush()
+            self.subject_publisher.forget_session(exam_session_id)
+        self.repository.set_exam_session_runtime(
+            exam_session_id, status="ended", ended_at=ended_at
+        )
+        return {
+            "armed": False,
+            "exam_session_id": exam_session_id,
+            "ended_at": ended_at.isoformat(),
+        }
+
+    def subject_status(self) -> dict:
+        """Measured anonymous-subject diagnostics only."""
+        if self.subjects is None:
+            return {
+                "enabled": bool(self.settings.subjects_enabled),
+                "running": False,
+                "problems": list(self._subject_problems),
+                "armed_sessions": {},
+                "pending_writes": self.subject_publisher.pending_depth,
+            }
+        status = dict(self.subjects.status())
+        status["enabled"] = bool(self.settings.subjects_enabled)
+        status["running"] = True
+        status["problems"] = list(self._subject_problems)
+        status["pending_writes"] = self.subject_publisher.pending_depth
+        return status
 
     # --- introspection ----------------------------------------------------
     def status(self) -> dict:
@@ -636,6 +790,7 @@ class Orchestrator:
                 "evidence": self.queue.evidence_depth(),
             },
 
+            "subjects": self.subject_status(),
             "notifications": {
                 "telegram": {
                     "configured": self.settings.telegram_configured,

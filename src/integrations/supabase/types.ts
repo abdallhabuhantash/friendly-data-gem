@@ -503,6 +503,135 @@ export type Database = {
         }
         Relationships: []
       }
+      session_subject_tracks: {
+        Row: {
+          association_confidence: number | null
+          association_method: string
+          created_at: string
+          ended_at: string | null
+          exam_session_id: string
+          id: string
+          raw_tracking_id: string
+          session_subject_id: string
+          started_at: string
+        }
+        Insert: {
+          association_confidence?: number | null
+          association_method?: string
+          created_at?: string
+          ended_at?: string | null
+          exam_session_id: string
+          id?: string
+          raw_tracking_id: string
+          session_subject_id: string
+          started_at?: string
+        }
+        Update: {
+          association_confidence?: number | null
+          association_method?: string
+          created_at?: string
+          ended_at?: string | null
+          exam_session_id?: string
+          id?: string
+          raw_tracking_id?: string
+          session_subject_id?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_subject_tracks_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_subject_tracks_session_subject_id_fkey"
+            columns: ["session_subject_id"]
+            isOneToOne: false
+            referencedRelation: "session_subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_subjects: {
+        Row: {
+          anchor_height: number | null
+          anchor_updated_at: string | null
+          anchor_width: number | null
+          anchor_x: number | null
+          anchor_y: number | null
+          camera_id: string | null
+          created_at: string
+          ended_at: string | null
+          exam_session_id: string
+          first_seen_at: string
+          id: string
+          last_association_confidence: number | null
+          last_seen_at: string
+          reassociation_count: number
+          subject_label: string
+          subject_number: number
+          tracking_status: string
+          updated_at: string
+        }
+        Insert: {
+          anchor_height?: number | null
+          anchor_updated_at?: string | null
+          anchor_width?: number | null
+          anchor_x?: number | null
+          anchor_y?: number | null
+          camera_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          exam_session_id: string
+          first_seen_at?: string
+          id?: string
+          last_association_confidence?: number | null
+          last_seen_at?: string
+          reassociation_count?: number
+          subject_label?: string
+          subject_number: number
+          tracking_status?: string
+          updated_at?: string
+        }
+        Update: {
+          anchor_height?: number | null
+          anchor_updated_at?: string | null
+          anchor_width?: number | null
+          anchor_x?: number | null
+          anchor_y?: number | null
+          camera_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          exam_session_id?: string
+          first_seen_at?: string
+          id?: string
+          last_association_confidence?: number | null
+          last_seen_at?: string
+          reassociation_count?: number
+          subject_label?: string
+          subject_number?: number
+          tracking_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_subjects_camera_id_fkey"
+            columns: ["camera_id"]
+            isOneToOne: false
+            referencedRelation: "cameras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_subjects_exam_session_id_fkey"
+            columns: ["exam_session_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_settings: {
         Row: {
           ai_service_url: string

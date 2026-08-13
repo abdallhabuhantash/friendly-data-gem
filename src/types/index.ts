@@ -339,3 +339,35 @@ export interface RosterStudentInput {
   universityId: string;
   fullName: string;
 }
+
+/**
+ * Truthful tracking state of one anonymous subject, as reported by the AI
+ * service. `uncertain` and `conflict` are preserved deliberately: the system
+ * never upgrades ambiguous tracking evidence into a confident claim.
+ */
+export type SubjectTrackingStatus =
+  "stable" | "temporarily_lost" | "uncertain" | "conflict" | "ended";
+
+/**
+ * An anonymous exam-session subject (S001, S002, …).
+ *
+ * This is NOT an identity: it carries no name, no university ID, no face, no
+ * biometric signature and no seat. Resolution to a roster student is manual,
+ * optional and on demand.
+ */
+export interface SessionSubject {
+  id: string;
+  examSessionId: string;
+  subjectNumber: number;
+  /** Deterministic per-session label, e.g. "S017". */
+  label: string;
+  cameraId: string | null;
+  trackingStatus: SubjectTrackingStatus;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  endedAt: string | null;
+  /** How often a lost raw track had to be recovered for this subject. */
+  reassociationCount: number;
+  /** Confidence of the most recent recovery, or null when never recovered. */
+  lastAssociationConfidence: number | null;
+}

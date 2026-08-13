@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Panel } from "@/components/common/Panel";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -8,11 +8,14 @@ import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/ui/button";
 import { ExamSessionFormDialog } from "@/components/exams/ExamSessionFormDialog";
 import { RosterPanel } from "@/components/exams/RosterPanel";
+import { SubjectsPanel } from "@/components/exams/SubjectsPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { useCameras } from "@/hooks/use-monitoring";
 import {
+  useEndExamSession,
   useExamSession,
   useSetExamConfiguredStatus,
+  useStartExamSession,
   useUpdateExamSession,
 } from "@/hooks/use-exams";
 import { EXAM_STATUS_LABELS } from "@/lib/exam-validation";
@@ -45,6 +48,8 @@ function ExamSessionDetailPage() {
   const { isAdministrator } = useAuth();
   const update = useUpdateExamSession(sessionId);
   const setStatus = useSetExamConfiguredStatus(sessionId);
+  const start = useStartExamSession(sessionId);
+  const end = useEndExamSession(sessionId);
   const [editing, setEditing] = useState(false);
 
   const submit = async (input: ExamSessionInput) => {
@@ -88,13 +93,58 @@ function ExamSessionDetailPage() {
           <>
             <Panel
               title="Overview"
-              subtitle="Configured information only. Monitoring has not been started."
+              subtitle={
+                data.status === "active"
+                  ? "Monitoring is armed: anonymous subjects are being tracked."
+                  : "Configured information only. Monitoring has not been started."
+              }
               actions={
                 isAdministrator ? (
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                       <Pencil className="mr-1 size-3.5" /> Edit
                     </Button>
+                    {data.status === "ready" && (
+                      <Button
+                        size="sm"
+                        disabled={start.isPending}
+                        onClick={async () => {
+                          try {
+                            await start.mutateAsync();
+                            toast.success("Monitoring started for this exam session");
+                          } catch (caught) {
+                            toast.error(
+                              caught instanceof Error
+                                ? caught.message
+                                : "Monitoring could not be started.",
+                            );
+                          }
+                        }}
+                      >
+                        <Play className="mr-1 size-3.5" /> Start exam session
+                      </Button>
+                    )}
+                    {data.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={end.isPending}
+                        onClick={async () => {
+                          try {
+                            await end.mutateAsync();
+                            toast.success("Exam session ended");
+                          } catch (caught) {
+                            toast.error(
+                              caught instanceof Error
+                                ? caught.message
+                                : "The session could not be ended.",
+                            );
+                          }
+                        }}
+                      >
+                        <Square className="mr-1 size-3.5" /> End exam session
+                      </Button>
+                    )}
                     {data.status === "draft" && (
                       <Button
                         size="sm"
@@ -143,6 +193,8 @@ function ExamSessionDetailPage() {
             >
               <Overview session={data} cameras={cameras.data ?? []} />
             </Panel>
+
+            <SubjectsPanel session={data} />
 
             <RosterPanel examSessionId={data.id} canEdit={isAdministrator} />
 
