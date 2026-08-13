@@ -183,7 +183,7 @@ class ReassociationDecision:
 
     raw_tracking_id: str
     accepted: bool
-    subject_number: Optional[str | int]
+    subject_number: Optional[int]
     score: Optional[float]
     runner_up_score: Optional[float]
     reason: str
