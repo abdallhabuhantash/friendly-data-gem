@@ -62,6 +62,36 @@ async def status(x_service_key: Optional[str] = Header(default=None)) -> dict:
     return app.state.orchestrator.status()
 
 
+@app.post("/exam-sessions/{exam_session_id}/arm")
+async def arm_exam_session(exam_session_id: str, x_service_key: Optional[str] = Header(default=None)) -> dict:
+    """Arms anonymous subject monitoring for one configured exam session.
+
+    Deliberately explicit: paper distribution at the start of an exam must not
+    be monitored, so nothing is armed until the console calls this endpoint.
+    """
+    _require_key(x_service_key)
+    orchestrator: Orchestrator = app.state.orchestrator
+    try:
+        return await asyncio.to_thread(orchestrator.arm_exam_session, exam_session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/exam-sessions/{exam_session_id}/end")
+async def end_exam_session(exam_session_id: str, x_service_key: Optional[str] = Header(default=None)) -> dict:
+    """Disarms monitoring and closes every anonymous subject of the session."""
+    _require_key(x_service_key)
+    orchestrator: Orchestrator = app.state.orchestrator
+    try:
+        return await asyncio.to_thread(orchestrator.end_exam_session, exam_session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.get("/stream/{camera_id}")
 async def stream(camera_id: str, x_service_key: Optional[str] = Header(default=None)):
     """Annotated MJPEG for one camera, shared across all viewers."""
