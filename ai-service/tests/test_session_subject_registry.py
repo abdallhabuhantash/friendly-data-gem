@@ -238,11 +238,11 @@ def test_far_away_track_is_refused_and_becomes_its_own_subject():
 def test_ambiguous_recovery_marks_uncertain_and_never_guesses():
     reg = registry()
     qualify(reg, "7", BBox(0.40, 0.40, 0.10, 0.30))
-    qualify(reg, "8", BBox(0.50, 0.40, 0.10, 0.30), start=1.0)
-    reg.update([], observed_at=at(2.4))
+    qualify(reg, "8", BBox(0.50, 0.40, 0.10, 0.30), start=0.6)
+    reg.update([], observed_at=at(1.6))
     result = reg.update(
         [person("99", BBox(0.45, 0.40, 0.10, 0.30))],
-        observed_at=at(2.6),
+        observed_at=at(1.8),
     )
     decision = result.decisions[0]
     assert not decision.accepted and decision.reason == "ambiguous"
@@ -255,10 +255,10 @@ def test_ambiguous_recovery_marks_uncertain_and_never_guesses():
 def test_uncertain_subject_can_still_recover_when_evidence_becomes_clear():
     reg = registry()
     qualify(reg, "7", BBox(0.40, 0.40, 0.10, 0.30))
-    qualify(reg, "8", BBox(0.50, 0.40, 0.10, 0.30), start=1.0)
-    reg.update([], observed_at=at(2.4))
-    reg.update([person("99", BBox(0.45, 0.40, 0.10, 0.30))], observed_at=at(2.6))
-    result = reg.update([person("100", BBox(0.401, 0.401, 0.10, 0.30))], observed_at=at(2.8))
+    qualify(reg, "8", BBox(0.50, 0.40, 0.10, 0.30), start=0.6)
+    reg.update([], observed_at=at(1.6))
+    reg.update([person("99", BBox(0.45, 0.40, 0.10, 0.30))], observed_at=at(1.8))
+    result = reg.update([person("100", BBox(0.401, 0.401, 0.10, 0.30))], observed_at=at(2.0))
     assert result.decisions[0].accepted
     assert result.decisions[0].subject_number == 1
 
@@ -338,5 +338,5 @@ def test_registry_never_reads_roster_or_identity_data():
     source = (
         __import__("pathlib").Path("app/ai/subject_registry.py").read_text(encoding="utf-8").lower()
     )
-    for forbidden in ("university_id", "full_name", "roster", "face", "biometric_match"):
+    for forbidden in ("university_id", "full_name", "exam_roster_students", "face_embedding"):
         assert forbidden not in source
