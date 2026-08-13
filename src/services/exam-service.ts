@@ -297,3 +297,32 @@ export const rosterService = {
     return (inserted.data ?? []).length;
   },
 };
+
+/**
+ * Read-only access to anonymous monitored subjects. Only the local AI service
+ * writes this data; the console never invents or edits a subject.
+ */
+export const sessionSubjectsService = {
+  async list(examSessionId: string): Promise<SessionSubject[]> {
+    const response = await supabase
+      .from("session_subjects")
+      .select("*")
+      .eq("exam_session_id", examSessionId)
+      .order("subject_number", { ascending: true });
+    fail(response.error);
+    return (response.data ?? []).map((row) => ({
+      id: row.id,
+      examSessionId: row.exam_session_id,
+      subjectNumber: row.subject_number,
+      label: row.subject_label,
+      cameraId: row.camera_id,
+      trackingStatus: (row.tracking_status ?? "stable") as SubjectTrackingStatus,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+      endedAt: row.ended_at,
+      reassociationCount: row.reassociation_count ?? 0,
+      lastAssociationConfidence:
+        row.last_association_confidence === null ? null : Number(row.last_association_confidence),
+    }));
+  },
+};
