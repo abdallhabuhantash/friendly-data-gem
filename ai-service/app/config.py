@@ -97,8 +97,39 @@ class Settings(BaseSettings):
             return None
         return value
 
+    # --- Anonymous exam-session subjects (optional capability, OFF by default)
+    # Identity here is anonymous and per-session only (S001, S002, …). Nothing
+    # is constructed while disabled. Enabling requires EVERY value explicitly:
+    # gap tolerance and qualification depend on camera frame rate, hall layout
+    # and tracker quality, so no deployment default is invented.
+    subjects_enabled: bool = False
+    subject_min_frames_to_qualify: Optional[int] = None
+    subject_min_seconds_to_qualify: Optional[float] = None
+    subject_short_gap_seconds: Optional[float] = None
+    subject_lost_after_seconds: Optional[float] = None
+    subject_end_after_seconds: Optional[float] = None
+    subject_reassociation_min_confidence: Optional[float] = None
+    subject_reassociation_margin: Optional[float] = None
+    subject_anchor_smoothing: Optional[float] = None
+    subject_pending_gap_seconds: Optional[float] = None
 
-
+    @field_validator(
+        "subject_min_frames_to_qualify",
+        "subject_min_seconds_to_qualify",
+        "subject_short_gap_seconds",
+        "subject_lost_after_seconds",
+        "subject_end_after_seconds",
+        "subject_reassociation_min_confidence",
+        "subject_reassociation_margin",
+        "subject_anchor_smoothing",
+        "subject_pending_gap_seconds",
+        mode="before",
+    )
+    @classmethod
+    def _blank_subject_value_is_unset(cls, value):  # noqa: ANN001, ANN206
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
     # --- Demo sources ---
