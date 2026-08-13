@@ -349,10 +349,12 @@ def test_ambiguous_recovery_is_refused_and_no_new_number_is_invented():
     qualify(reg, "7", BBox(0.40, 0.40, 0.10, 0.30))
     qualify(reg, "8", BBox(0.50, 0.40, 0.10, 0.30), start=0.6)
     reg.update([], observed_at=at(1.6))
-    for index in range(6):
+    # Well past the qualification thresholds, yet still inside the recovery
+    # window: the raw track must NOT be allowed to earn a number of its own.
+    for index in range(4):
         result = reg.update(
             [person("99", BBox(0.45, 0.40, 0.10, 0.30))],
-            observed_at=at(1.8 + index * 0.2),
+            observed_at=at(1.8 + index * 0.1),
         )
     decision = result.decisions[0]
     assert not decision.accepted and decision.reason == "ambiguous_candidates"
@@ -362,13 +364,7 @@ def test_ambiguous_recovery_is_refused_and_no_new_number_is_invented():
     assert [item.label for item in result.subjects] == ["S001", "S002"]
     assert result.label_for("99") == UNRESOLVED_TRACK_LABEL
     assert result.unresolved[0].reason == "possible_continuation_of_lost_subject"
-    assert any(
-        event.kind is SubjectEventKind.UNRESOLVED_CANDIDATE for event in reg_events(reg)
-    ) or True
-
-
-def reg_events(_reg) -> tuple:
-    return ()
+    assert result.unresolved[0].frames >= 4
 
 
 def test_unresolved_candidate_is_announced_once():
