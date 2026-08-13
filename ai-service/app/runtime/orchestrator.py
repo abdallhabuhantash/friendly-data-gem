@@ -537,17 +537,6 @@ class Orchestrator:
                     margin=self.settings.association_margin,
                 )
 
-        annotated = annotate_frame(
-            frame,
-            detections,
-            camera_name=camera.name,
-            associations=associations,
-            timestamp=datetime.now(),
-        )
-        jpeg = encode_jpeg(annotated)
-        if jpeg:
-            self.stream_hub.publish(camera.id, jpeg)
-
         # The observation view is derived from THIS frame and is independent of
         # rule configuration, so pose scheduling never depends on Task 1 rules.
         now_mono = time.monotonic()
@@ -563,13 +552,31 @@ class Orchestrator:
         # Anonymous subject identity is derived from the SAME observation view and
         # is completely independent of rule configuration: it never creates
         # events and never influences Task 1 thresholds.
+        subject_labels: dict[str, str] = {}
         if self.subjects is not None:
             try:
-                self.subjects.observe(observations)
+                subject_result = self.subjects.observe(observations)
+                if subject_result is not None:
+                    subject_labels = dict(subject_result.labels)
             except Exception as exc:
                 logger.warning(
                     "Anonymous subject tracking failed for one frame: %s", type(exc).__name__
                 )
+
+        annotated = annotate_frame(
+            frame,
+            detections,
+            camera_name=camera.name,
+            associations=associations,
+            timestamp=datetime.now(),
+            # Operators see the anonymous label of THIS frame, or UNRESOLVED —
+            # never an invented identity for an unowned raw track.
+            subject_labels=subject_labels,
+        )
+        jpeg = encode_jpeg(annotated)
+        if jpeg:
+            self.stream_hub.publish(camera.id, jpeg)
+
 
         if not applicable_rules:
             return observations
