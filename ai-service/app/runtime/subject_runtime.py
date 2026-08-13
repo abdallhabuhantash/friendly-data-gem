@@ -157,6 +157,13 @@ class SubjectRuntime:
                         for camera_id in session.camera_ids:
                             self._camera_sessions[camera_id] = session_id
 
+    def reserve_numbers(self, exam_session_id: str, highest_number: int) -> None:
+        """Never re-issue a number a previous run of this session used."""
+        with self._lock:
+            state = self._sessions.get(exam_session_id)
+            if state is not None:
+                state.reserve(highest_number)
+
     def is_armed(self, exam_session_id: str) -> bool:
         with self._lock:
             return exam_session_id in self._sessions
@@ -239,6 +246,9 @@ class SubjectRuntime:
                     "cameras": sorted(state.registries),
                     "active_subjects": sum(
                         registry.active_subject_count for registry in state.registries.values()
+                    ),
+                    "subjects_total": sum(
+                        registry.subject_count for registry in state.registries.values()
                     ),
                 }
                 for session_id, state in self._sessions.items()

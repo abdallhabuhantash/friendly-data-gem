@@ -182,7 +182,13 @@ class Orchestrator:
             if config is None:
                 self.subjects = None
                 return
-            self.subjects = SubjectRuntime(config, self.subject_publisher)
+            # Numbering is allocated by the database so it stays atomic,
+            # monotonic and unique per exam session across cameras/instances.
+            self.subjects = SubjectRuntime(
+                config,
+                self.subject_publisher,
+                number_allocator=self.repository.allocate_subject_number,
+            )
         except Exception as exc:
             self.subjects = None
             self._subject_problems.append(
@@ -712,7 +718,9 @@ class Orchestrator:
             self.subject_publisher.bind_existing(
                 exam_session_id, self.repository.existing_subject_rows(exam_session_id)
             )
+            history = self.repository.open_subject_history(exam_session_id)
         except Exception as exc:
+            history = []
             logger.warning("Existing subject rows could not be read: %s", type(exc).__name__)
         self.subjects.arm(
             ArmedSession(
@@ -721,6 +729,13 @@ class Orchestrator:
                 started_at=started_at,
             )
         )
+        # Numbers used by an earlier run of this session stay reserved forever.
+        highest = max(
+            (int(row.get("subject_number") or 0) for row in history),
+            default=0,
+        )
+        if highest:
+            self.subjects.reserve_numbers(exam_session_id, highest)
         if status != "active":
             self.repository.set_exam_session_runtime(
                 exam_session_id, status="active", started_at=started_at
