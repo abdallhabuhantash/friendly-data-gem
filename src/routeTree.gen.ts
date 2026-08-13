@@ -22,6 +22,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
 import { Route as AuthenticatedExamSessionsIndexRouteImport } from './routes/_authenticated/exam-sessions.index'
+import { Route as AuthenticatedExamSessionsSessionIdRouteImport } from './routes/_authenticated/exam-sessions.$sessionId'
 import { Route as ApiStreamCameraIdRouteImport } from './routes/api/stream.$cameraId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -89,6 +90,12 @@ const AuthenticatedExamSessionsIndexRoute =
     path: '/exam-sessions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedExamSessionsSessionIdRoute =
+  AuthenticatedExamSessionsSessionIdRouteImport.update({
+    id: '/exam-sessions/$sessionId',
+    path: '/exam-sessions/$sessionId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiStreamCameraIdRoute = ApiStreamCameraIdRouteImport.update({
   id: '/api/stream/$cameraId',
   path: '/api/stream/$cameraId',
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/users': typeof AuthenticatedUsersRoute
+  '/exam-sessions/$sessionId': typeof AuthenticatedExamSessionsSessionIdRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
   '/exam-sessions/': typeof AuthenticatedExamSessionsIndexRoute
 }
@@ -122,6 +130,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/users': typeof AuthenticatedUsersRoute
+  '/exam-sessions/$sessionId': typeof AuthenticatedExamSessionsSessionIdRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
   '/exam-sessions': typeof AuthenticatedExamSessionsIndexRoute
 }
@@ -139,6 +148,7 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
+  '/_authenticated/exam-sessions/$sessionId': typeof AuthenticatedExamSessionsSessionIdRoute
   '/api/stream/$cameraId': typeof ApiStreamCameraIdRoute
   '/_authenticated/exam-sessions/': typeof AuthenticatedExamSessionsIndexRoute
 }
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/users'
+    | '/exam-sessions/$sessionId'
     | '/api/stream/$cameraId'
     | '/exam-sessions/'
   fileRoutesByTo: FileRoutesByTo
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/users'
+    | '/exam-sessions/$sessionId'
     | '/api/stream/$cameraId'
     | '/exam-sessions'
   id:
@@ -187,6 +199,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/_authenticated/users'
+    | '/_authenticated/exam-sessions/$sessionId'
     | '/api/stream/$cameraId'
     | '/_authenticated/exam-sessions/'
   fileRoutesById: FileRoutesById
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedExamSessionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/exam-sessions/$sessionId': {
+      id: '/_authenticated/exam-sessions/$sessionId'
+      path: '/exam-sessions/$sessionId'
+      fullPath: '/exam-sessions/$sessionId'
+      preLoaderRoute: typeof AuthenticatedExamSessionsSessionIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/stream/$cameraId': {
       id: '/api/stream/$cameraId'
       path: '/api/stream/$cameraId'
@@ -311,6 +331,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
+  AuthenticatedExamSessionsSessionIdRoute: typeof AuthenticatedExamSessionsSessionIdRoute
   AuthenticatedExamSessionsIndexRoute: typeof AuthenticatedExamSessionsIndexRoute
 }
 
@@ -324,6 +345,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
+  AuthenticatedExamSessionsSessionIdRoute:
+    AuthenticatedExamSessionsSessionIdRoute,
   AuthenticatedExamSessionsIndexRoute: AuthenticatedExamSessionsIndexRoute,
 }
 

@@ -5,6 +5,7 @@ import {
   Cctv,
   LayoutDashboard,
   ScanEye,
+  ClipboardList,
   Settings,
   ShieldAlert,
   UserCog,
@@ -26,6 +27,7 @@ const primaryNav: NavItem[] = [
   { to: "/events", label: "Events", icon: ShieldAlert },
   { to: "/cameras", label: "Cameras", icon: Cctv, adminOnly: true },
   { to: "/ai-rules", label: "AI Rules", icon: ScanEye, adminOnly: true },
+  { to: "/exam-sessions", label: "Exam Sessions", icon: ClipboardList },
   { to: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
